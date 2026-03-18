@@ -1,0 +1,47 @@
+name: release-windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build GUI executable
+        shell: pwsh
+        run: |
+          $env:UV_CACHE_DIR = Join-Path $env:USERPROFILE '.uv-cache'
+          $env:UV_PYTHON_INSTALL_DIR = Join-Path $env:USERPROFILE '.uv-python'
+          powershell -ExecutionPolicy Bypass -File .\scripts\build_windows_gui.ps1
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CodexHandoffSetup-windows
+          path: dist/CodexHandoffSetup.exe
+
+      - name: Publish release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/CodexHandoffSetup.exe

@@ -1,0 +1,7 @@
+﻿project_name = "Codex用OSS"
+important_paths = ["README.md", "src", "tests"]
+exclude_globs = [".git/**", ".codex-handoff/**", ".venv/**", "__pycache__/**", "AGENTS.md"]
+
+[output]
+max_recent_commits = 3
+max_changed_files = 12
