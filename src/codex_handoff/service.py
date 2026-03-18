@@ -13,6 +13,7 @@ from codex_handoff.errors import CodexHandoffError
 from codex_handoff.files import has_utf8_bom, read_optional_text, write_text
 from codex_handoff.models import DoctorFinding, HandoffDocument, ManualContext, ProjectConfig, ReadmeContext, RepoSnapshot, SessionRecord
 from codex_handoff.paths import GlobalPaths, ProjectPaths, build_project_paths, get_global_paths
+from codex_handoff.relevance import is_transient_review_message, is_transient_review_note
 from codex_handoff.renderer import CodexMarkdownRenderer
 from codex_handoff.sources import AgentsSource, GitSource, ManualFilesSource, ReadmeSource
 from codex_handoff.templates import DECISIONS_TEMPLATE, NEXT_THREAD_TEMPLATE, PROJECT_TEMPLATE, TASKS_TEMPLATE
@@ -74,24 +75,29 @@ def capture_project(start: Path, note: str | None = None) -> tuple[ProjectPaths,
     project_paths, _, _, _ = initialize_project(start)
     config = load_config(project_paths.config_file)
     note_text = _normalize_note(note)
-    snapshot = GitSource(project_paths, config).collect()
     recent_sessions = CodexSessionSource(project_paths, config).collect()
-    write_text(project_paths.state_file, _render_state_json(config, project_paths, snapshot, recent_sessions))
-    document = _build_handoff_document(project_paths, config, snapshot, recent_sessions, note_text=note_text)
-    _write_generated_documents(project_paths, document)
-    _mirror_global_store_to_local(project_paths)
+    operation_time = now_local_iso()
+    snapshot, _ = _generate_handoff_outputs(
+        project_paths,
+        config,
+        recent_sessions,
+        generated_at=operation_time,
+        note_text=note_text,
+    )
     return project_paths, config, snapshot
 
 
 def prepare_handoff(start: Path) -> tuple[ProjectPaths, str]:
     project_paths, _, _, _ = initialize_project(start)
     config = load_config(project_paths.config_file)
-    snapshot = GitSource(project_paths, config).collect()
     recent_sessions = CodexSessionSource(project_paths, config).collect()
-    write_text(project_paths.state_file, _render_state_json(config, project_paths, snapshot, recent_sessions))
-    document = _build_handoff_document(project_paths, config, snapshot, recent_sessions)
-    markdown = _write_generated_documents(project_paths, document)
-    _mirror_global_store_to_local(project_paths)
+    operation_time = now_local_iso()
+    _, markdown = _generate_handoff_outputs(
+        project_paths,
+        config,
+        recent_sessions,
+        generated_at=operation_time,
+    )
     return project_paths, markdown
 
 
@@ -176,17 +182,88 @@ def run_doctor(start: Path) -> tuple[ProjectPaths, list[DoctorFinding]]:
     return project_paths, findings
 
 
+def _generate_handoff_outputs(
+    project_paths: ProjectPaths,
+    config: ProjectConfig,
+    recent_sessions: list[SessionRecord],
+    *,
+    generated_at: str,
+    note_text: str | None = None,
+) -> tuple[RepoSnapshot, str]:
+    readme_context = ReadmeSource(project_paths).collect()
+    existing_context = _load_existing_generated_context(project_paths)
+    agents_markdown = AgentsSource(project_paths).collect().agents_markdown
+    snapshot = GitSource(project_paths, config).collect()
+    markdown = ""
+
+    for _ in range(3):
+        write_text(
+            project_paths.state_file,
+            _render_state_json(
+                config,
+                project_paths,
+                snapshot,
+                recent_sessions,
+                captured_at=generated_at,
+            ),
+        )
+        document = _build_handoff_document(
+            project_paths,
+            config,
+            snapshot,
+            recent_sessions,
+            readme_context=readme_context,
+            existing_context=existing_context,
+            agents_markdown=agents_markdown,
+            generated_at=generated_at,
+            note_text=note_text,
+        )
+        markdown = _write_generated_documents(project_paths, document)
+        _mirror_global_store_to_local(project_paths)
+
+        next_snapshot = GitSource(project_paths, config).collect()
+        if next_snapshot == snapshot:
+            return snapshot, markdown
+        snapshot = next_snapshot
+
+    write_text(
+        project_paths.state_file,
+        _render_state_json(
+            config,
+            project_paths,
+            snapshot,
+            recent_sessions,
+            captured_at=generated_at,
+        ),
+    )
+    document = _build_handoff_document(
+        project_paths,
+        config,
+        snapshot,
+        recent_sessions,
+        readme_context=readme_context,
+        existing_context=existing_context,
+        agents_markdown=agents_markdown,
+        generated_at=generated_at,
+        note_text=note_text,
+    )
+    markdown = _write_generated_documents(project_paths, document)
+    _mirror_global_store_to_local(project_paths)
+    return snapshot, markdown
+
+
 def _build_handoff_document(
     project_paths: ProjectPaths,
     config: ProjectConfig,
     snapshot: RepoSnapshot,
     recent_sessions: list[SessionRecord],
     *,
+    readme_context: ReadmeContext,
+    existing_context: ManualContext,
+    agents_markdown: str,
+    generated_at: str,
     note_text: str | None = None,
 ) -> HandoffDocument:
-    readme_context = ReadmeSource(project_paths).collect()
-    existing_context = _load_existing_generated_context(project_paths)
-    agents_markdown = AgentsSource(project_paths).collect().agents_markdown
     context = _build_generated_context(
         project_paths,
         readme_context,
@@ -194,13 +271,14 @@ def _build_handoff_document(
         recent_sessions,
         agents_markdown,
         existing_context,
+        generated_at=generated_at,
         note_text=note_text,
     )
     return HandoffDocument(
         project_name=config.project_name,
         root_path=project_paths.root.as_posix(),
         handoff_dir=project_paths.handoff_dir.as_posix(),
-        generated_at=now_local_iso(),
+        generated_at=generated_at,
         manual_context=context,
         repo_snapshot=snapshot,
         recent_sessions=recent_sessions,
@@ -228,6 +306,7 @@ def _build_generated_context(
     agents_markdown: str,
     existing_context: ManualContext,
     *,
+    generated_at: str,
     note_text: str | None = None,
 ) -> ManualContext:
     purpose = _derive_purpose(readme_context, recent_sessions)
@@ -240,7 +319,13 @@ def _build_generated_context(
         existing_context.decisions_markdown,
     )
     tasks_markdown = _merge_existing_tasks(
-        _derive_tasks(project_paths, snapshot, recent_sessions, note_text=note_text),
+        _derive_tasks(
+            project_paths,
+            snapshot,
+            recent_sessions,
+            generated_at=generated_at,
+            note_text=note_text,
+        ),
         existing_context.tasks_markdown,
     )
     return ManualContext(
@@ -365,12 +450,13 @@ def _derive_tasks(
     snapshot: RepoSnapshot,
     recent_sessions: list[SessionRecord],
     *,
+    generated_at: str,
     note_text: str | None = None,
 ) -> str:
     tasks: list[str] = []
 
     if note_text:
-        tasks.append(f"{note_text} (captured {now_local_iso()})")
+        tasks.append(f"{note_text} (captured {generated_at})")
 
     for record in recent_sessions[:1]:
         if _session_task_completed(record):
@@ -535,11 +621,13 @@ def _decision_summary(text: str | None) -> str | None:
 
 def _decision_summaries(text: str | None) -> list[str]:
     cleaned = _clean_summary_text(text)
-    if not cleaned:
+    if not cleaned or is_transient_review_note(cleaned):
         return []
 
     summaries: list[str] = []
     for sentence in _extract_sentences(cleaned):
+        if is_transient_review_note(sentence):
+            continue
         if not _looks_like_decision(sentence):
             continue
         summaries.append(_truncate(sentence, 140))
@@ -551,7 +639,7 @@ def _decision_summaries(text: str | None) -> list[str]:
 
 def _task_summary(text: str | None) -> str | None:
     cleaned = _clean_summary_text(text)
-    if not cleaned or _is_trivial_message(cleaned):
+    if not cleaned or _is_trivial_message(cleaned) or is_transient_review_message(cleaned):
         return None
     return _truncate(cleaned, 160)
 
@@ -728,16 +816,16 @@ def _merge_existing_bullets(current_markdown: str, existing_markdown: str) -> st
     existing_items = _extract_existing_decision_lines(existing_markdown)
     merged = _unique(current_items + existing_items)
     if not merged:
-        return current_markdown or existing_markdown
+        return "- 決定事項はまだ抽出できていません。"
     return _render_bullets(merged)
 
 
 def _merge_existing_tasks(current_markdown: str, existing_markdown: str) -> str:
     current_items = _extract_actionable_task_lines(current_markdown)
-    existing_items = _extract_actionable_task_lines(existing_markdown)
+    existing_items = _extract_preserved_task_lines(existing_markdown)
     merged = _unique(current_items + existing_items)
     if not merged:
-        return current_markdown or existing_markdown
+        return "- [ ] 次に進める作業はまだ抽出できていません。"
     return "\n".join(f"- [ ] {item}" for item in merged[:5])
 
 
@@ -746,10 +834,33 @@ def _extract_actionable_task_lines(markdown: str) -> list[str]:
     for line in markdown.splitlines():
         stripped = line.strip()
         if stripped.startswith("- [ ] "):
-            items.append(stripped[6:].strip())
+            task = stripped[6:].strip()
+            if not is_transient_review_message(task):
+                items.append(task)
         elif stripped.startswith("* [ ] "):
-            items.append(stripped[6:].strip())
+            task = stripped[6:].strip()
+            if not is_transient_review_message(task):
+                items.append(task)
     return items
+
+
+def _extract_preserved_task_lines(markdown: str) -> list[str]:
+    items: list[str] = []
+    for task in _extract_actionable_task_lines(markdown):
+        if _is_generated_housekeeping_task(task):
+            continue
+        items.append(task)
+    return items
+
+
+def _is_generated_housekeeping_task(task: str) -> bool:
+    return task.startswith(
+        (
+            "変更ファイルを確認する:",
+            "重要ファイルを確認して文脈を戻す:",
+            "`AGENTS.md` と `next-thread.md` を確認して次の作業を決める。",
+        )
+    )
 
 
 def _extract_existing_decision_lines(markdown: str) -> list[str]:
@@ -758,7 +869,11 @@ def _extract_existing_decision_lines(markdown: str) -> list[str]:
         if line.startswith("自動更新:") or line.startswith("生成日時:"):
             continue
         if re.match(r"\d{4}-\d{2}-\d{2}:", line):
-            items.append(line)
+            _, _, body = line.partition(":")
+            if body.strip() and _looks_like_decision(body.strip()) and not is_transient_review_note(body.strip()):
+                items.append(_truncate(line, 140))
+            continue
+        if is_transient_review_note(line):
             continue
         if _looks_like_decision(line):
             items.append(_truncate(line, 140))
@@ -851,13 +966,15 @@ def _render_state_json(
     project_paths: ProjectPaths,
     snapshot: RepoSnapshot,
     recent_sessions: list[SessionRecord],
+    *,
+    captured_at: str,
 ) -> str:
     payload = {
         "project_id": project_paths.project_id,
         "project_name": config.project_name,
         "root_path": project_paths.root.as_posix(),
         "handoff_dir": project_paths.handoff_dir.as_posix(),
-        "captured_at": now_local_iso(),
+        "captured_at": captured_at,
         "git_available": snapshot.git_available,
         "is_repo": snapshot.is_repo,
         "branch": snapshot.branch,

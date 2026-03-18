@@ -6,6 +6,7 @@ from pathlib import Path
 from codex_handoff.config import default_config
 from codex_handoff.models import ProjectConfig, SessionRecord
 from codex_handoff.paths import ProjectPaths
+from codex_handoff.relevance import is_transient_review_message
 
 
 MAX_EXCERPT_CHARS = 280
@@ -29,6 +30,8 @@ class CodexSessionSource:
                 continue
             record = self._read_session_record(session_file, meta, cwd)
             if record is None:
+                continue
+            if _skip_transient_review_session(record):
                 continue
             records.append(record)
             if len(records) >= self.config.output.max_recent_sessions:
@@ -117,9 +120,13 @@ class CodexSessionSource:
         if item_type == "event_msg" and payload.get("type") == "user_message":
             text = _normalize_excerpt(payload.get("message"))
             if text:
-                if not record.first_user_message:
+                is_review_message = is_transient_review_message(text)
+                if not record.first_user_message or (
+                    is_transient_review_message(record.first_user_message) and not is_review_message
+                ):
                     record.first_user_message = text
-                record.latest_user_message = text
+                if not is_review_message or not record.latest_user_message:
+                    record.latest_user_message = text
             return
 
         if item_type != "response_item":
@@ -182,3 +189,7 @@ def _is_subagent_session(meta: dict[str, object]) -> bool:
         return True
     source = meta.get("source")
     return isinstance(source, dict) and "subagent" in source
+
+
+def _skip_transient_review_session(record: SessionRecord) -> bool:
+    return is_transient_review_message(record.latest_user_message)

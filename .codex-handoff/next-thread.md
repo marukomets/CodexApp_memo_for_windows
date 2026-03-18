@@ -1,6 +1,6 @@
 ﻿# Next Thread Brief: Codex用OSS
 
-- 生成日時: `2026-03-18T16:25:10+09:00`
+- 生成日時: `2026-03-18T17:04:55+09:00`
 - ルート: `C:/開発/Codex用OSS`
 - メモ保存先: `C:/Users/stsuc/.codex-handoff/projects/codex-oss-963061a73d87`
 
@@ -16,13 +16,20 @@
 - `README.md`
 - `src`
 - `tests`
+- `.codex-handoff`
 - `AGENTS.md`
 
 ## 現在の主題
 
-- これって新しいスレッド始めるとき明示しなくてもちゃんと参照してくれるのかな
+- 変更ファイルを確認する: `src/codex_handoff/codex_sessions.py`, `src/codex_handoff/service.py`, `src/codex_handoff/sources.py` など
 
 ## 直近の会話要点
+
+### セッション `019cffd6`
+- 開始 `2026-03-18T07:25:54.177Z` / 更新 `2026-03-18T08:04:15.429Z`
+- 最初の依頼: ## Code review guidelines: # Review guidelines: You are acting as a reviewer for a proposed code change made by another engineer. Below are some default guidelines for determining whether the original author would appreciate the issue being flagged. These are not the final word…
+- 直近の依頼: 進めてください
+- 直近の回答: `codex-handoff` の最適化を入れました。レビュー専用の一時会話を handoff 文脈から外し、tracked な `.codex-handoff` を dirty 判定に含めるようにしています。実装は [codex_sessions.py](C:/開発/Codex用OSS/src/codex_handoff/codex_sessions.py)、[service.py](C:/開発/Codex用OSS/src/codex_handoff/service.py)、[sources.py](C:/開発/Codex用OSS/src/codex…
 
 ### セッション `019cffd1`
 - 開始 `2026-03-18T07:21:07.461Z` / 更新 `2026-03-18T07:22:20.683Z`
@@ -35,25 +42,19 @@
 - 直近の依頼: 最適化して、全てnext-thread.mdと同じく自動で更新されていくようにしてください。
 - 直近の回答: **結果** [project.md](C:/開発/Codex用OSS/.codex-handoff/project.md)、[decisions.md](C:/開発/Codex用OSS/.codex-handoff/decisions.md)、[tasks.md](C:/開発/Codex用OSS/.codex-handoff/tasks.md)、[next-thread.md](C:/開発/Codex用OSS/.codex-handoff/next-thread.md) を `next-thread.md` と同じ自動更新系に揃えました。実装は [s…
 
-### セッション `019cfe88`
-- 開始 `2026-03-18T01:21:28.232Z` / 更新 `2026-03-18T05:44:53.602Z`
-- 最初の依頼: Codexappとても使いやすくはまっています。 ですが、プロジェクト内でもスレッドを変えると一切のメモリを引き継がない、端末を変えても同様に引継ぎができないなど主に引継ぎや事前のすり合わせをする際に多少の不便さを感じる部分があります。 そもそも同じスレッド内でずっと進められればそれに越したことはないですが、長引いた結果コンテキスト圧縮を繰り返すと目に見えて性能が落ちるためスレッドを定期的に新しくすることは必須かと思っています。 これを解決できるCodexapp用のOSS開発できます？
-- 直近の依頼: まぁ後で考えよう。一回他のスレッドに引き継げるか試してみよう
-- 直近の回答: そうしてください。今の状態なら、新しいスレッド側でこのプロジェクトを開いたときに、background sync が更新した [next-thread.md](C:\Users\stsuc\.codex-handoff\projects\codex-oss-963061a73d87\next-thread.md) を参照できる状態です。 見るべきポイントは単純です。新スレッドで、 - 今の会話の要点が最初から把握されるか - Git なしでも文脈が落ちないか - 追加説明の手間がどこまで減ったか ここを見てください。もし引き継ぎがまだ薄いなら、次は「要…
-
 ## 直近の決定事項
 
 - 2026-03-18: **結果** project.md、decisions.md、tasks.md、next-thread.md を `next-thread.md` と同じ自動更新系に揃えました。実装は [s…
+- 2026-03-18: `tasks.md` に過去の自動生成タスクが積み上がる副作用が見えたので、そこも止めます。既存タスクの再注入は、手動メモや実タスクだけ残して、毎回変わる「変更ファイル確認」系は残さないようにします。
+- 2026-03-18: 実装方針は見えました。`recent_sessions` の選別でレビュー専用セッションを落としつつ、既存の `tasks.md` / `decisions.md` からも同種の一時タスクを再注入しないようにします。
+- 2026-03-18: その通りです。現状は handoff の自動生成が「今の会話」と「本来引き継ぐべきプロジェクト文脈」を分離できていません。
 - 2026-03-18: Git 管理外のディレクトリとして path 単位で handoff を継続する。
-- 2026-03-18: `codex-handoff` はこの環境では正常に動いていて、新スレッド向けのブリーフも生成できています。続けて `.codex-handoff/next-thread.md` と `.codex-handoff/project.md` を見て、実際に新スレッドで拾う前提が揃…
-- 2026-03-18: 新しいスレッド開始時に `codex-handoff` 前提が実際に取れるか、このリポジトリの設定どおり確認します。まず `codex-handoff prepare --stdout` を実行して、その後 `.codex-handoff` の状態を見ます。
+- 2026-03-18: 新しいスレッド開始時に `codex-handoff` 前提が実際に取れるか、このリポジトリの設定どおり確認します。まず `codex-handoff prepare --stdout` を実行して、その後 `.codex-handoff` の状態を見ま…
 
 ## 未完了タスク
 
-- [ ] これって新しいスレッド始めるとき明示しなくてもちゃんと参照してくれるのかな
-- [ ] 変更ファイルを確認する: `.github/workflows/release-windows.yml`, `.gitignore`, `README.md` など
-- [ ] 重要ファイルを確認して文脈を戻す: `README.md`, `src`, `tests`
-- [ ] 最適化して、全てnext-thread.mdと同じく自動で更新されていくようにしてください。
+- [ ] 変更ファイルを確認する: `src/codex_handoff/codex_sessions.py`, `src/codex_handoff/service.py`, `src/codex_handoff/sources.py` など
+- [ ] 変更ファイルを確認する: `.codex-handoff/decisions.md`, `.codex-handoff/next-thread.md`, `.codex-handoff/project.md` など
 
 ## 現在の作業状態
 
@@ -65,18 +66,15 @@
 
 ### 変更ファイル
 
-- `.github/workflows/release-windows.yml` (??)
-- `.gitignore` (??)
-- `README.md` (??)
-- `build-assets/CodexHandoffBackground.zip` (??)
-- `build-assets/background-build/CodexHandoffBackground/Analysis-00.toc` (??)
-- `build-assets/background-build/CodexHandoffBackground/COLLECT-00.toc` (??)
-- `build-assets/background-build/CodexHandoffBackground/CodexHandoffBackground.exe` (??)
-- `build-assets/background-build/CodexHandoffBackground/CodexHandoffBackground.pkg` (??)
-- `build-assets/background-build/CodexHandoffBackground/EXE-00.toc` (??)
-- `build-assets/background-build/CodexHandoffBackground/PKG-00.toc` (??)
-- `build-assets/background-build/CodexHandoffBackground/PYZ-00.pyz` (??)
-- `build-assets/background-build/CodexHandoffBackground/PYZ-00.toc` (??)
+- `src/codex_handoff/codex_sessions.py` (M)
+- `src/codex_handoff/service.py` (M)
+- `src/codex_handoff/sources.py` (M)
+- `tests/test_cli.py` (M)
+- `src/codex_handoff/relevance.py` (??)
+
+### 直近コミット
+
+- `ec18474` Automate handoff sync and package Windows background app
 
 ### 検出した重要パス
 
@@ -86,9 +84,9 @@
 
 ## 新スレッドで最初にやるべき 3 手
 
-1. `tasks.md` の先頭タスクを確認する: これって新しいスレッド始めるとき明示しなくてもちゃんと参照してくれるのかな
-2. 変更ファイルを確認して現在地を把握する: `.github/workflows/release-windows.yml`, `.gitignore`, `README.md` など
-3. 直近の回答内容を踏まえて次の判断を置く: このリポジトリでは、かなり高い確率で参照されます。ただし「Codex アプリがネイティブに自動記憶している」のではなく、`AGENTS.md` の指示で新スレッド開始時に `codex-handoff prepare` を実行して、[.c…
+1. `tasks.md` の先頭タスクを確認する: 変更ファイルを確認する: `src/codex_handoff/codex_sessions.py`, `src/codex_handoff/service.py`, `src/codex_handoff/sources.py` など
+2. 変更ファイルを確認して現在地を把握する: `src/codex_handoff/codex_sessions.py`, `src/codex_handoff/service.py`, `src/codex_handoff/sources.py` など
+3. 直近の回答内容を踏まえて次の判断を置く: `codex-handoff` の最適化を入れました。レビュー専用の一時会話を handoff 文脈から外し、tracked な `.codex-handoff` を dirty 判定に含めるようにしています。実装は [codex_ses…
 
 ## 明示すべき仮定
 

@@ -1,7 +1,7 @@
 ﻿# Project Context
 
 - 自動更新: `codex-handoff prepare` / `capture` / background sync
-- 生成日時: `2026-03-18T16:25:10+09:00`
+- 生成日時: `2026-03-18T17:04:55+09:00`
 - ルート: `C:/開発/Codex用OSS`
 
 ## 目的
@@ -22,6 +22,7 @@
 - `README.md`
 - `src`
 - `tests`
+- `.codex-handoff`
 - `AGENTS.md`
 
 ## 運用ルール

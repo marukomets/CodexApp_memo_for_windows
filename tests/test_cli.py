@@ -477,6 +477,68 @@ def test_prepare_finds_relevant_session_beyond_many_unrelated_files(
     assert (global_home / "projects").exists()
 
 
+def test_prepare_skips_transient_review_session_and_keeps_project_sessions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    global_home, codex_home = _set_env(tmp_path, monkeypatch)
+    workdir = tmp_path / "review-filter-workspace"
+    workdir.mkdir()
+    _write(workdir / "README.md", "# Demo\n")
+
+    _write_session_log(
+        codex_home,
+        workdir,
+        session_id="project-session-001",
+        entries=[
+            {"role": "user", "text": "Keep the installer plan visible."},
+            {"role": "assistant", "text": "I will keep the installer plan visible.", "phase": "final_answer"},
+        ],
+    )
+    _write_session_log(
+        codex_home,
+        workdir,
+        session_id="project-session-002",
+        entries=[
+            {"role": "user", "text": "Track the background sync progress."},
+            {"role": "assistant", "text": "I will track the background sync progress.", "phase": "final_answer"},
+        ],
+    )
+    _write_session_log(
+        codex_home,
+        workdir,
+        session_id="project-session-003",
+        entries=[
+            {"role": "user", "text": "Keep the Windows packaging task in focus."},
+            {"role": "assistant", "text": "I will keep the Windows packaging task in focus.", "phase": "final_answer"},
+        ],
+    )
+    _write_session_log(
+        codex_home,
+        workdir,
+        session_id="review-session-001",
+        entries=[
+            {
+                "role": "user",
+                "text": "## Code review guidelines: Review the current code changes and provide prioritized findings.",
+            },
+            {"role": "assistant", "text": "Checking unstaged diffs.", "phase": "commentary"},
+        ],
+    )
+
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(service_module, "now_local_iso", lambda: FIXED_NOW)
+
+    result = runner.invoke(app, ["prepare", "--stdout"])
+    assert result.exit_code == 0
+
+    store = global_home / "projects" / make_project_id(workdir)
+    state = json.loads((store / "state.json").read_text(encoding="utf-8"))
+    session_ids = [item["session_id"] for item in state["recent_sessions"]]
+    assert session_ids == ["project-session-003", "project-session-002", "project-session-001"]
+    assert "Code review guidelines" not in result.stdout
+    assert "Keep the installer plan visible." in result.stdout
+
+
 def test_prepare_ignores_sessions_from_parent_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -653,6 +715,72 @@ def test_prepare_imports_newer_local_config_changes(
     config_text = (store / "config.toml").read_text(encoding="utf-8")
     assert 'project_name = "mirror-custom"' in config_text
     assert 'important_paths = ["README.md", "custom"]' in config_text
+
+
+def test_prepare_marks_tracked_local_handoff_files_as_dirty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _require_git()
+    global_home, _ = _set_env(tmp_path, monkeypatch)
+    repo = tmp_path / "tracked-handoff-repo"
+    repo.mkdir()
+    _init_git_repo(repo)
+    _write(repo / "README.md", "# Demo\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "Initial commit")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(service_module, "now_local_iso", lambda: FIXED_NOW)
+
+    assert runner.invoke(app, ["prepare"]).exit_code == 0
+    _git(repo, "add", ".codex-handoff")
+    _git(repo, "commit", "-m", "Track handoff mirror")
+
+    monkeypatch.setattr(service_module, "now_local_iso", lambda: "2026-03-18T10:05:00+09:00")
+
+    result = runner.invoke(app, ["prepare"])
+    assert result.exit_code == 0
+
+    store = global_home / "projects" / make_project_id(repo)
+    state = json.loads((store / "state.json").read_text(encoding="utf-8"))
+    changed_paths = [item["path"] for item in state["changed_files"]]
+    assert state["is_dirty"] is True
+    assert ".codex-handoff/next-thread.md" in changed_paths
+    assert ".codex-handoff/state.json" in changed_paths
+
+
+def test_prepare_drops_stale_review_items_from_existing_generated_notes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    global_home, _ = _set_env(tmp_path, monkeypatch)
+    workdir = tmp_path / "drop-review-notes"
+    workdir.mkdir()
+    _write(workdir / "README.md", "# Demo\n")
+
+    monkeypatch.chdir(workdir)
+    monkeypatch.setattr(service_module, "now_local_iso", lambda: FIXED_NOW)
+
+    assert runner.invoke(app, ["prepare"]).exit_code == 0
+
+    store = global_home / "projects" / make_project_id(workdir)
+    _write(
+        store / "tasks.md",
+        "# Tasks\n\n- 自動更新: `codex-handoff prepare` / `capture` / background sync\n- 生成日時: `2026-03-18T09:59:00+09:00`\n\n- [ ] ## Code review guidelines: Review the current code changes and provide prioritized findings.\n- [ ] 重要ファイルを確認して文脈を戻す: `README.md`\n",
+    )
+    _write(
+        store / "decisions.md",
+        "# Decisions\n\n- 自動更新: `codex-handoff prepare` / `capture` / background sync\n- 生成日時: `2026-03-18T09:59:00+09:00`\n\n- 2026-03-18: 変更は現状 `.codex-handoff` 配下だけで、まずは staged/unstaged の差分量と中身を確認しています。\n- 2026-03-18: global store を正本にし、リポジトリ内 `.codex-handoff/` は同期ミラーとして扱う。\n",
+    )
+
+    result = runner.invoke(app, ["prepare"])
+    assert result.exit_code == 0
+
+    tasks = (store / "tasks.md").read_text(encoding="utf-8")
+    decisions = (store / "decisions.md").read_text(encoding="utf-8")
+    assert "Code review guidelines" not in tasks
+    assert "重要ファイルを確認して文脈を戻す" in tasks
+    assert "staged/unstaged" not in decisions
+    assert "global store を正本にし、リポジトリ内 `.codex-handoff/` は同期ミラーとして扱う。" in decisions
 
 
 def test_doctor_reports_missing_global_agents_when_not_installed(

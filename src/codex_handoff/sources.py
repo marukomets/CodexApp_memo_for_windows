@@ -69,6 +69,7 @@ class GitSource:
     def __init__(self, paths: ProjectPaths, config: ProjectConfig | None = None) -> None:
         self.paths = paths
         self.config = config or default_config(paths.root)
+        self._tracked_handoff_paths: set[str] | None = None
 
     def collect(self) -> RepoSnapshot:
         git_binary = shutil.which("git")
@@ -151,11 +152,26 @@ class GitSource:
         return detected
 
     def _is_excluded(self, relative_path: str) -> bool:
+        if relative_path.startswith(".codex-handoff/") and self._is_tracked_handoff_path(relative_path):
+            return False
         posix_path = PurePosixPath(relative_path)
         for pattern in self.config.exclude_globs:
             if posix_path.match(pattern) or relative_path == pattern.rstrip("/"):
                 return True
         return False
+
+    def _is_tracked_handoff_path(self, relative_path: str) -> bool:
+        if self._tracked_handoff_paths is None:
+            result = self._run_git("ls-files", "--", ".codex-handoff", check=False)
+            if result.returncode != 0:
+                self._tracked_handoff_paths = set()
+            else:
+                self._tracked_handoff_paths = {
+                    to_posix_path(line.strip())
+                    for line in result.stdout.splitlines()
+                    if line.strip()
+                }
+        return relative_path in self._tracked_handoff_paths
 
     def _run_git(self, *args: str, check: bool) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
