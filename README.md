@@ -186,7 +186,7 @@ global setup、現在の project store、global store 側の UTF-8 BOM なし、
   - `state.json`
   - `next-thread.md`
 
-`project.md`、`decisions.md`、`tasks.md`、`memory.json`、`next-thread.md` はすべて自動生成対象です。README、AGENTS、Git 状態、Codex の最近のメインセッションをもとに再構成します。`memory.json` は構造化メモリの正本で、`semantic_entries`、`worklog_entries`、`current_focus`、`focus_paths`、`next_actions` を持ちます。`~/.codex-handoff/user-memory.json` には、返答言語や危険操作前の確認方針のような薄いユーザー共通設定だけを保持します。
+`project.md`、`decisions.md`、`tasks.md`、`memory.json`、`next-thread.md` はすべて自動生成対象です。README、AGENTS、Git 状態、Codex の最近のメインセッションをもとに再構成します。`memory.json` は構造化メモリの正本で、`semantic_entries`、`worklog_entries`、`current_focus`、`focus_paths`、`next_actions` を持ちます。`state.json` は live status の置き場で、`captured_at`、Git の現在地、追跡ブランチとの差分、必要に応じて GitHub Release / workflow の最新状態を毎回再取得して持ちます。`~/.codex-handoff/user-memory.json` には、返答言語や危険操作前の確認方針のような薄いユーザー共通設定だけを保持します。
 
 ## 保存するもの / しないもの
 

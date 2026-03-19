@@ -298,7 +298,10 @@ class CodexMarkdownRenderer:
 
     def _current_state_section(self, handoff: HandoffDocument) -> list[str]:
         snapshot = handoff.repo_snapshot
+        volatile_status = handoff.volatile_status
         lines = [f"- プロジェクト名: `{handoff.project_name}`"]
+        if volatile_status and volatile_status.refreshed_at:
+            lines.append(f"- 状態更新: `{volatile_status.refreshed_at}`")
         if handoff.recent_sessions:
             lines.append(f"- 直近に検出した Codex セッション: {len(handoff.recent_sessions)} 件")
 
@@ -319,6 +322,31 @@ class CodexMarkdownRenderer:
         lines.append(f"- Git ルート: `{snapshot.git_root or handoff.root_path}`")
         lines.append(f"- ブランチ: `{snapshot.branch or '(detached)'}`")
         lines.append(f"- 作業ツリー: `{'dirty' if snapshot.is_dirty else 'clean'}`")
+        if volatile_status and volatile_status.tracking_branch:
+            lines.append(f"- 追跡ブランチ: `{volatile_status.tracking_branch}`")
+            if volatile_status.ahead_count or volatile_status.behind_count:
+                lines.append(
+                    f"- 同期状況: `ahead {volatile_status.ahead_count} / behind {volatile_status.behind_count}`"
+                )
+            else:
+                lines.append("- 同期状況: `up-to-date`")
+        if volatile_status and volatile_status.latest_upstream_commit:
+            lines.append(f"- 最新 push 済みコミット: `{volatile_status.latest_upstream_commit}`")
+        if volatile_status and volatile_status.latest_tag:
+            lines.append(f"- 最新ローカルタグ: `{volatile_status.latest_tag}`")
+        if volatile_status and volatile_status.remote_repository:
+            lines.append(f"- リモート: `{volatile_status.remote_repository}`")
+        if volatile_status and volatile_status.latest_release:
+            lines.append(
+                f"- 最新 Release: {_render_markdown_link(volatile_status.latest_release.tag, volatile_status.latest_release.url)}"
+            )
+        if volatile_status and volatile_status.latest_workflow:
+            workflow_state = f"`{volatile_status.latest_workflow.status}`"
+            if volatile_status.latest_workflow.conclusion:
+                workflow_state = f"{workflow_state} / `{volatile_status.latest_workflow.conclusion}`"
+            lines.append(
+                f"- 最新 workflow: {_render_markdown_link(volatile_status.latest_workflow.name, volatile_status.latest_workflow.url)} ({workflow_state})"
+            )
 
         if snapshot.changed_files:
             lines.extend(["", "### 変更ファイル", ""])
@@ -449,3 +477,9 @@ def _truncate_step_text(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip() + "…"
+
+
+def _render_markdown_link(label: str, url: str | None) -> str:
+    if url:
+        return f"[{label}]({url})"
+    return f"`{label}`"

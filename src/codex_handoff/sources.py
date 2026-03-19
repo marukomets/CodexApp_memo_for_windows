@@ -1,12 +1,26 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import PurePosixPath
+from urllib.error import URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from codex_handoff.config import default_config
 from codex_handoff.files import parse_markdown_sections, read_optional_text, strip_first_heading, to_posix_path
-from codex_handoff.models import CommitSummary, FileChange, ManualContext, ProjectConfig, ReadmeContext, RepoSnapshot
+from codex_handoff.models import (
+    CommitSummary,
+    FileChange,
+    LiveRelease,
+    LiveWorkflow,
+    ManualContext,
+    ProjectConfig,
+    ReadmeContext,
+    RepoSnapshot,
+    VolatileStatus,
+)
 from codex_handoff.paths import ProjectPaths
 from codex_handoff.processes import hidden_subprocess_kwargs
 
@@ -185,6 +199,124 @@ class GitSource:
         )
 
 
+class LiveStatusSource:
+    def __init__(self, paths: ProjectPaths) -> None:
+        self.paths = paths
+        self._cached_remote_repository: str | None = None
+        self._cached_release: LiveRelease | None = None
+        self._cached_workflow: LiveWorkflow | None = None
+        self._has_loaded_remote_metadata = False
+
+    def collect(self, snapshot: RepoSnapshot, *, refreshed_at: str) -> VolatileStatus:
+        status = VolatileStatus(refreshed_at=refreshed_at)
+        if not snapshot.git_available or not snapshot.is_repo:
+            return status
+
+        if snapshot.recent_commits:
+            status.latest_local_commit = snapshot.recent_commits[0]
+        status.latest_tag = self._latest_tag()
+        status.tracking_branch = self._tracking_branch()
+
+        remote_name = self._default_remote_name()
+        if status.tracking_branch:
+            status.behind_count, status.ahead_count = self._ahead_behind_counts()
+            status.latest_upstream_commit = self._short_rev("@{upstream}")
+            remote_name = status.tracking_branch.split("/", 1)[0]
+
+        if remote_name:
+            status.remote_url = self._remote_url(remote_name)
+            status.remote_repository = _parse_github_repository(status.remote_url)
+
+        if status.remote_repository:
+            status.latest_release, status.latest_workflow = self._load_remote_metadata(status.remote_repository)
+        return status
+
+    def _latest_tag(self) -> str | None:
+        result = self._run_git("describe", "--tags", "--abbrev=0", check=False)
+        if result.returncode != 0:
+            return None
+        value = result.stdout.strip()
+        return value or None
+
+    def _tracking_branch(self) -> str | None:
+        result = self._run_git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}", check=False)
+        if result.returncode != 0:
+            return None
+        value = result.stdout.strip()
+        return value or None
+
+    def _ahead_behind_counts(self) -> tuple[int, int]:
+        result = self._run_git("rev-list", "--left-right", "--count", "@{upstream}...HEAD", check=False)
+        if result.returncode != 0:
+            return (0, 0)
+        parts = result.stdout.strip().replace("\t", " ").split()
+        if len(parts) < 2:
+            return (0, 0)
+        try:
+            behind_count = int(parts[0])
+            ahead_count = int(parts[1])
+        except ValueError:
+            return (0, 0)
+        return (behind_count, ahead_count)
+
+    def _short_rev(self, revision: str) -> str | None:
+        result = self._run_git("rev-parse", "--short", revision, check=False)
+        if result.returncode != 0:
+            return None
+        value = result.stdout.strip()
+        return value or None
+
+    def _default_remote_name(self) -> str | None:
+        result = self._run_git("remote", check=False)
+        if result.returncode != 0:
+            return None
+        for line in result.stdout.splitlines():
+            value = line.strip()
+            if value:
+                return value
+        return None
+
+    def _remote_url(self, remote_name: str) -> str | None:
+        result = self._run_git("remote", "get-url", remote_name, check=False)
+        if result.returncode != 0:
+            return None
+        value = result.stdout.strip()
+        return value or None
+
+    def _load_remote_metadata(self, repository: str) -> tuple[LiveRelease | None, LiveWorkflow | None]:
+        if self._has_loaded_remote_metadata and self._cached_remote_repository == repository:
+            return self._cached_release, self._cached_workflow
+
+        self._cached_remote_repository = repository
+        self._cached_release = None
+        self._cached_workflow = None
+        self._has_loaded_remote_metadata = True
+
+        release_payload = _github_api_json(f"https://api.github.com/repos/{repository}/releases?per_page=1")
+        if isinstance(release_payload, list) and release_payload:
+            self._cached_release = _parse_release(release_payload[0])
+
+        workflow_payload = _github_api_json(f"https://api.github.com/repos/{repository}/actions/runs?per_page=1")
+        if isinstance(workflow_payload, dict):
+            runs = workflow_payload.get("workflow_runs")
+            if isinstance(runs, list) and runs:
+                self._cached_workflow = _parse_workflow(runs[0])
+
+        return self._cached_release, self._cached_workflow
+
+    def _run_git(self, *args: str, check: bool) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args],
+            cwd=self.paths.root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=check,
+            **hidden_subprocess_kwargs(),
+        )
+
+
 def _extract_readme_intro(body: str) -> str:
     lines: list[str] = []
     for line in body.splitlines():
@@ -227,3 +359,78 @@ def _changed_file_priority(path: str) -> int:
     if path.endswith((".toc", ".pkg", ".pyz", ".zip", ".exe", ".html")):
         score -= 25
     return score
+
+
+def _parse_github_repository(remote_url: str | None) -> str | None:
+    if not remote_url:
+        return None
+
+    if remote_url.startswith("git@github.com:"):
+        path = remote_url.split(":", 1)[1]
+        return _normalize_github_repository_path(path)
+
+    parsed = urlparse(remote_url)
+    if parsed.netloc.lower() != "github.com":
+        return None
+    return _normalize_github_repository_path(parsed.path)
+
+
+def _normalize_github_repository_path(path: str) -> str | None:
+    normalized = path.strip().lstrip("/").rstrip("/")
+    if normalized.endswith(".git"):
+        normalized = normalized[:-4]
+    if normalized.count("/") != 1:
+        return None
+    owner, repo = normalized.split("/", 1)
+    if not owner or not repo:
+        return None
+    return f"{owner}/{repo}"
+
+
+def _github_api_json(url: str) -> object | None:
+    request = Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "codex-handoff",
+        },
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except (OSError, URLError, json.JSONDecodeError):
+        return None
+
+
+def _parse_release(payload: object) -> LiveRelease | None:
+    if not isinstance(payload, dict):
+        return None
+    tag = payload.get("tag_name")
+    if not isinstance(tag, str) or not tag.strip():
+        return None
+    url = payload.get("html_url")
+    published_at = payload.get("published_at")
+    return LiveRelease(
+        tag=tag.strip(),
+        url=url if isinstance(url, str) and url else None,
+        published_at=published_at if isinstance(published_at, str) and published_at else None,
+    )
+
+
+def _parse_workflow(payload: object) -> LiveWorkflow | None:
+    if not isinstance(payload, dict):
+        return None
+    name = payload.get("name")
+    status = payload.get("status")
+    if not isinstance(name, str) or not isinstance(status, str):
+        return None
+    conclusion = payload.get("conclusion")
+    url = payload.get("html_url")
+    updated_at = payload.get("updated_at")
+    return LiveWorkflow(
+        name=name,
+        status=status,
+        conclusion=conclusion if isinstance(conclusion, str) and conclusion else None,
+        url=url if isinstance(url, str) and url else None,
+        updated_at=updated_at if isinstance(updated_at, str) and updated_at else None,
+    )

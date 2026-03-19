@@ -23,11 +23,21 @@ from codex_handoff.memory import (
     render_memory_json,
     render_user_memory_json,
 )
-from codex_handoff.models import DoctorFinding, HandoffDocument, ManualContext, MemorySnapshot, ProjectConfig, ReadmeContext, RepoSnapshot, SessionRecord
+from codex_handoff.models import (
+    DoctorFinding,
+    HandoffDocument,
+    ManualContext,
+    MemorySnapshot,
+    ProjectConfig,
+    ReadmeContext,
+    RepoSnapshot,
+    SessionRecord,
+    VolatileStatus,
+)
 from codex_handoff.paths import GlobalPaths, ProjectPaths, build_project_paths, get_global_paths
 from codex_handoff.relevance import is_transient_review_message, is_transient_review_note
 from codex_handoff.renderer import CodexMarkdownRenderer
-from codex_handoff.sources import AgentsSource, GitSource, ManualFilesSource, ReadmeSource
+from codex_handoff.sources import AgentsSource, GitSource, LiveStatusSource, ManualFilesSource, ReadmeSource
 from codex_handoff.summaries import split_summary_sentences, summarize_actionable_request, summarize_user_request
 from codex_handoff.templates import DECISIONS_TEMPLATE, NEXT_THREAD_TEMPLATE, PROJECT_TEMPLATE, TASKS_TEMPLATE
 
@@ -217,6 +227,7 @@ def _generate_handoff_outputs(
     user_memory_markdown = _build_user_memory_markdown(project_paths, agents_markdown)
     existing_user_memory = load_user_memory(project_paths.global_paths.user_memory_file)
     snapshot = GitSource(project_paths, config).collect()
+    live_status_source = LiveStatusSource(project_paths)
     markdown = ""
 
     for _ in range(3):
@@ -237,6 +248,7 @@ def _generate_handoff_outputs(
             snapshot,
             generated_at,
         )
+        volatile_status = live_status_source.collect(snapshot, refreshed_at=generated_at)
         write_text(
             project_paths.memory_file,
             render_memory_json(project_paths, memory_snapshot, generated_at),
@@ -248,6 +260,7 @@ def _generate_handoff_outputs(
                 project_paths,
                 snapshot,
                 recent_sessions,
+                volatile_status=volatile_status,
                 captured_at=generated_at,
             ),
         )
@@ -259,6 +272,7 @@ def _generate_handoff_outputs(
             readme_context=readme_context,
             existing_context=existing_context,
             memory_snapshot=memory_snapshot,
+            volatile_status=volatile_status,
             user_memory_entries=user_memory_entries,
             agents_markdown=agents_markdown,
             generated_at=generated_at,
@@ -289,6 +303,7 @@ def _generate_handoff_outputs(
         snapshot,
         generated_at,
     )
+    volatile_status = live_status_source.collect(snapshot, refreshed_at=generated_at)
     write_text(
         project_paths.memory_file,
         render_memory_json(project_paths, memory_snapshot, generated_at),
@@ -300,6 +315,7 @@ def _generate_handoff_outputs(
             project_paths,
             snapshot,
             recent_sessions,
+            volatile_status=volatile_status,
             captured_at=generated_at,
         ),
     )
@@ -311,6 +327,7 @@ def _generate_handoff_outputs(
         readme_context=readme_context,
         existing_context=existing_context,
         memory_snapshot=memory_snapshot,
+        volatile_status=volatile_status,
         user_memory_entries=user_memory_entries,
         agents_markdown=agents_markdown,
         generated_at=generated_at,
@@ -336,6 +353,7 @@ def _build_handoff_document(
     readme_context: ReadmeContext,
     existing_context: ManualContext,
     memory_snapshot: MemorySnapshot,
+    volatile_status: VolatileStatus,
     user_memory_entries: list[MemoryEntry],
     agents_markdown: str,
     generated_at: str,
@@ -361,6 +379,7 @@ def _build_handoff_document(
         manual_context=context,
         repo_snapshot=snapshot,
         memory_snapshot=memory_snapshot,
+        volatile_status=volatile_status,
         user_memory_entries=user_memory_entries,
         recent_sessions=recent_sessions,
     )
@@ -1302,6 +1321,7 @@ def _initial_state_json(project_name: str, project_paths: ProjectPaths) -> str:
         "git_root": None,
         "repo_agents_file": "AGENTS.md" if project_paths.repo_agents_file.exists() else None,
         "recent_sessions": [],
+        "volatile_status": None,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 
@@ -1336,6 +1356,7 @@ def _render_state_json(
     snapshot: RepoSnapshot,
     recent_sessions: list[SessionRecord],
     *,
+    volatile_status: VolatileStatus | None = None,
     captured_at: str,
 ) -> str:
     payload = {
@@ -1354,6 +1375,7 @@ def _render_state_json(
         "git_root": snapshot.git_root,
         "repo_agents_file": "AGENTS.md" if project_paths.repo_agents_file.exists() else None,
         "recent_sessions": [item.to_dict() for item in recent_sessions],
+        "volatile_status": volatile_status.to_dict() if volatile_status else None,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 

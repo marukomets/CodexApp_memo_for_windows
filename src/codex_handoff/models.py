@@ -32,6 +32,58 @@ class CommitSummary:
 
 
 @dataclass(slots=True)
+class LiveRelease:
+    tag: str
+    url: str | None = None
+    published_at: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class LiveWorkflow:
+    name: str
+    status: str
+    conclusion: str | None = None
+    url: str | None = None
+    updated_at: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class VolatileStatus:
+    refreshed_at: str | None = None
+    tracking_branch: str | None = None
+    ahead_count: int = 0
+    behind_count: int = 0
+    latest_local_commit: CommitSummary | None = None
+    latest_upstream_commit: str | None = None
+    remote_url: str | None = None
+    remote_repository: str | None = None
+    latest_tag: str | None = None
+    latest_release: LiveRelease | None = None
+    latest_workflow: LiveWorkflow | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "refreshed_at": self.refreshed_at,
+            "tracking_branch": self.tracking_branch,
+            "ahead_count": self.ahead_count,
+            "behind_count": self.behind_count,
+            "latest_local_commit": self.latest_local_commit and asdict(self.latest_local_commit),
+            "latest_upstream_commit": self.latest_upstream_commit,
+            "remote_url": self.remote_url,
+            "remote_repository": self.remote_repository,
+            "latest_tag": self.latest_tag,
+            "latest_release": self.latest_release and self.latest_release.to_dict(),
+            "latest_workflow": self.latest_workflow and self.latest_workflow.to_dict(),
+        }
+
+
+@dataclass(slots=True)
 class RepoSnapshot:
     git_available: bool
     is_repo: bool
@@ -192,6 +244,7 @@ class HandoffDocument:
     manual_context: ManualContext
     repo_snapshot: RepoSnapshot
     memory_snapshot: MemorySnapshot = field(default_factory=MemorySnapshot)
+    volatile_status: VolatileStatus | None = None
     user_memory_entries: list[MemoryEntry] = field(default_factory=list)
     recent_sessions: list[SessionRecord] = field(default_factory=list)
 

@@ -12,6 +12,7 @@ import codex_handoff.service as service_module
 from codex_handoff import __version__
 from codex_handoff.cli import app
 from codex_handoff.files import has_utf8_bom
+from codex_handoff.models import LiveRelease, LiveWorkflow, VolatileStatus
 from codex_handoff.paths import make_project_id
 
 runner = CliRunner()
@@ -221,6 +222,104 @@ def test_prepare_works_in_non_git_directory_and_uses_path_store(
     assert state["is_repo"] is False
     assert state["root_path"] == workdir.as_posix()
     assert (workdir / ".codex-handoff" / "next-thread.md").exists()
+
+
+def test_prepare_records_volatile_status_for_tracking_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _require_git()
+    global_home, _ = _set_env(tmp_path, monkeypatch)
+    remote = tmp_path / "remote.git"
+    _init_bare_git_repo(remote)
+
+    repo = tmp_path / "upstream-repo"
+    repo.mkdir()
+    _init_git_repo(repo)
+    _write(repo / "README.md", "# Demo\n")
+    _write(repo / "src" / "app.py", "print('v1')\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "Initial commit")
+    _git(repo, "remote", "add", "origin", str(remote))
+    _git(repo, "push", "-u", "origin", "main")
+
+    _write(repo / "src" / "app.py", "print('v2')\n")
+    _git(repo, "add", "src/app.py")
+    _git(repo, "commit", "-m", "Second commit")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(service_module, "now_local_iso", lambda: FIXED_NOW)
+
+    result = runner.invoke(app, ["prepare"])
+    assert result.exit_code == 0
+
+    store = global_home / "projects" / make_project_id(repo)
+    state = json.loads((store / "state.json").read_text(encoding="utf-8"))
+    volatile_status = state["volatile_status"]
+    assert volatile_status["refreshed_at"] == FIXED_NOW
+    assert volatile_status["tracking_branch"] == "origin/main"
+    assert volatile_status["ahead_count"] == 1
+    assert volatile_status["behind_count"] == 0
+    assert volatile_status["latest_upstream_commit"]
+
+    next_thread = (store / "next-thread.md").read_text(encoding="utf-8")
+    assert f"- 状態更新: `{FIXED_NOW}`" in next_thread
+    assert "- 追跡ブランチ: `origin/main`" in next_thread
+    assert "- 同期状況: `ahead 1 / behind 0`" in next_thread
+
+
+def test_prepare_keeps_volatile_status_out_of_memory_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _require_git()
+    global_home, _ = _set_env(tmp_path, monkeypatch)
+    repo = tmp_path / "live-status-repo"
+    repo.mkdir()
+    _init_git_repo(repo)
+    _write(repo / "README.md", "# Demo\n")
+    _write(repo / "src" / "app.py", "print('v1')\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "Initial commit")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(service_module, "now_local_iso", lambda: FIXED_NOW)
+
+    def fake_collect(self, snapshot, *, refreshed_at: str) -> VolatileStatus:
+        return VolatileStatus(
+            refreshed_at=refreshed_at,
+            tracking_branch="origin/main",
+            ahead_count=1,
+            behind_count=0,
+            latest_upstream_commit="abc1234",
+            remote_repository="marukomets/CodexApp_memo_for_windows",
+            latest_tag="v0.6.8",
+            latest_release=LiveRelease(
+                tag="v0.6.8",
+                url="https://example.test/releases/v0.6.8",
+            ),
+            latest_workflow=LiveWorkflow(
+                name="release-windows",
+                status="completed",
+                conclusion="success",
+                url="https://example.test/actions/1",
+            ),
+        )
+
+    monkeypatch.setattr(service_module.LiveStatusSource, "collect", fake_collect)
+
+    result = runner.invoke(app, ["prepare"])
+    assert result.exit_code == 0
+
+    store = global_home / "projects" / make_project_id(repo)
+    state = json.loads((store / "state.json").read_text(encoding="utf-8"))
+    assert state["volatile_status"]["latest_release"]["tag"] == "v0.6.8"
+    assert state["volatile_status"]["latest_workflow"]["name"] == "release-windows"
+
+    memory = json.loads((store / "memory.json").read_text(encoding="utf-8"))
+    assert "volatile_status" not in memory
+
+    next_thread = (store / "next-thread.md").read_text(encoding="utf-8")
+    assert "- 最新 Release: [v0.6.8](https://example.test/releases/v0.6.8)" in next_thread
+    assert "- 最新 workflow: [release-windows](https://example.test/actions/1) (`completed` / `success`)" in next_thread
 
 
 def test_prepare_includes_recent_codex_session_for_git_repo(
@@ -2882,6 +2981,19 @@ def _init_git_repo(root: Path) -> None:
         _git(root, "init")
     _git(root, "config", "user.email", "test@example.com")
     _git(root, "config", "user.name", "Test User")
+
+
+def _init_bare_git_repo(root: Path) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "init", "--bare"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=True,
+    )
 
 
 def _git(root: Path, *args: str) -> str:
