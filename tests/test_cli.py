@@ -291,10 +291,10 @@ def test_prepare_keeps_volatile_status_out_of_memory_snapshot(
             behind_count=0,
             latest_upstream_commit="abc1234",
             remote_repository="marukomets/CodexApp_memo_for_windows",
-            latest_tag="v0.6.8",
+            latest_tag="v0.6.9",
             latest_release=LiveRelease(
-                tag="v0.6.8",
-                url="https://example.test/releases/v0.6.8",
+                tag="v0.6.9",
+                url="https://example.test/releases/v0.6.9",
             ),
             latest_workflow=LiveWorkflow(
                 name="release-windows",
@@ -311,14 +311,14 @@ def test_prepare_keeps_volatile_status_out_of_memory_snapshot(
 
     store = global_home / "projects" / make_project_id(repo)
     state = json.loads((store / "state.json").read_text(encoding="utf-8"))
-    assert state["volatile_status"]["latest_release"]["tag"] == "v0.6.8"
+    assert state["volatile_status"]["latest_release"]["tag"] == "v0.6.9"
     assert state["volatile_status"]["latest_workflow"]["name"] == "release-windows"
 
     memory = json.loads((store / "memory.json").read_text(encoding="utf-8"))
     assert "volatile_status" not in memory
 
     next_thread = (store / "next-thread.md").read_text(encoding="utf-8")
-    assert "- 最新 Release: [v0.6.8](https://example.test/releases/v0.6.8)" in next_thread
+    assert "- 最新 Release: [v0.6.9](https://example.test/releases/v0.6.9)" in next_thread
     assert "- 最新 workflow: [release-windows](https://example.test/actions/1) (`completed` / `success`)" in next_thread
 
 

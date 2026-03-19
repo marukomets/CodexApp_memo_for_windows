@@ -37,5 +37,5 @@ def test_build_version_info_text_accepts_custom_names() -> None:
 
 
 def test_versioned_executable_name_uses_current_version() -> None:
-    assert versioned_executable_name(version="0.6.8") == "CodexHandoffSetup-0.6.8.exe"
+    assert versioned_executable_name(version="0.6.9") == "CodexHandoffSetup-0.6.9.exe"
     assert versioned_executable_name("CustomSetup", version="v1.2.3") == "CustomSetup-1.2.3.exe"

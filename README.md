@@ -260,8 +260,8 @@ GitHub Releases 向けの Windows ビルド workflow は [release-windows.yml](.
 想定フロー:
 
 ```powershell
-git tag v0.6.8
-git push origin v0.6.8
+git tag v0.6.9
+git push origin v0.6.9
 ```
 
 ## ライセンス
