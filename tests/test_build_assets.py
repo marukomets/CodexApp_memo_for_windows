@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codex_handoff.build_assets import build_icon_bytes, build_version_info_text, write_build_assets
+from codex_handoff.build_assets import (
+    build_icon_bytes,
+    build_version_info_text,
+    versioned_executable_name,
+    write_build_assets,
+)
 
 
 def test_build_icon_bytes_returns_ico_header() -> None:
@@ -29,3 +34,8 @@ def test_build_version_info_text_accepts_custom_names() -> None:
 
     assert "InternalName', 'CodexHandoffSetup-0.5.2'" in text
     assert "OriginalFilename', 'CodexHandoffSetup-0.5.2.exe'" in text
+
+
+def test_versioned_executable_name_uses_current_version() -> None:
+    assert versioned_executable_name(version="0.6.8") == "CodexHandoffSetup-0.6.8.exe"
+    assert versioned_executable_name("CustomSetup", version="v1.2.3") == "CustomSetup-1.2.3.exe"

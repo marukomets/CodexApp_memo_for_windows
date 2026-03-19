@@ -121,9 +121,8 @@ class GitSource:
             if self._is_excluded(normalized):
                 continue
             changed.append(FileChange(status=status, path=normalized))
-            if len(changed) >= self.config.output.max_changed_files:
-                break
-        return changed
+        ranked = sorted(enumerate(changed), key=lambda item: (_changed_file_sort_key(item[1].path), item[0]))
+        return [change for _, change in ranked[: self.config.output.max_changed_files]]
 
     def _collect_recent_commits(self) -> list[CommitSummary]:
         result = self._run_git(
@@ -204,3 +203,27 @@ def _get_section(sections: dict[str, str], ordered_values: list[str], key: str) 
     if index < len(ordered_values):
         return ordered_values[index]
     return ""
+
+
+def _changed_file_sort_key(path: str) -> tuple[int, str]:
+    return (-_changed_file_priority(path), path)
+
+
+def _changed_file_priority(path: str) -> int:
+    score = 0
+    if path.startswith("src/"):
+        score += 120
+    elif path.startswith("tests/"):
+        score += 110
+    elif path in {"README.md", "AGENTS.md", "pyproject.toml", "uv.lock"}:
+        score += 100
+    elif path.startswith(".codex-handoff/"):
+        score += 90
+    elif path.startswith("build-assets/"):
+        score += 20
+
+    if path.endswith((".py", ".md", ".toml", ".json", ".lock")):
+        score += 10
+    if path.endswith((".toc", ".pkg", ".pyz", ".zip", ".exe", ".html")):
+        score -= 25
+    return score

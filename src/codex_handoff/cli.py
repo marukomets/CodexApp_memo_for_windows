@@ -5,6 +5,7 @@ from pathlib import Path
 
 import typer
 
+from codex_handoff import __version__
 from codex_handoff.errors import CodexHandoffError
 from codex_handoff.daemon import run_background_sync
 from codex_handoff.service import (
@@ -22,6 +23,26 @@ for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8")
 
 app = typer.Typer(help="Codex project handoff helper", no_args_is_help=True)
+
+
+def _version_callback(value: bool) -> None:
+    if not value:
+        return
+    typer.echo(__version__)
+    raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the installed codex-handoff version and exit.",
+    ),
+) -> None:
+    """Codex project handoff helper."""
 
 
 @app.command("setup")
@@ -139,6 +160,7 @@ def where_command() -> None:
     typer.echo(f"project.md: {project_paths.project_file}")
     typer.echo(f"decisions.md: {project_paths.decisions_file}")
     typer.echo(f"tasks.md: {project_paths.tasks_file}")
+    typer.echo(f"memory.json: {project_paths.memory_file}")
     typer.echo(f"next-thread.md: {project_paths.next_thread_file}")
 
 

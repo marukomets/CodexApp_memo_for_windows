@@ -34,7 +34,7 @@ wheels = [
 
 [[package]]
 name = "codex-handoff"
-version = "0.5.2"
+version = "0.6.8"
 source = { editable = "." }
 dependencies = [
     { name = "typer" },

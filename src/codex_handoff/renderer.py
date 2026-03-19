@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from codex_handoff.files import markdown_body_or_fallback
+from codex_handoff.focus import select_user_facing_changed_files
+from codex_handoff.memory import _looks_like_meta_memory_evaluation, grouped_semantic_entries, grouped_worklog_entries
 from codex_handoff.models import HandoffDocument, SessionRecord
+from codex_handoff.summaries import summarize_actionable_request
 
 
 class CodexMarkdownRenderer:
@@ -97,6 +100,22 @@ class CodexMarkdownRenderer:
         lines.extend(
             [
                 "",
+                "## プロジェクト記憶",
+                "",
+            ]
+        )
+        lines.extend(self._semantic_memory_section(handoff))
+        lines.extend(
+            [
+                "",
+                "## 最近の作業記録",
+                "",
+            ]
+        )
+        lines.extend(self._worklog_section(handoff))
+        lines.extend(
+            [
+                "",
                 "## 現在の主題",
                 "",
             ]
@@ -165,13 +184,76 @@ class CodexMarkdownRenderer:
             lines.extend(f"- `{path}`" for path in handoff.repo_snapshot.detected_important_paths)
         return lines
 
+    def _semantic_memory_section(self, handoff: HandoffDocument) -> list[str]:
+        grouped = grouped_semantic_entries(handoff.memory_snapshot)
+        lines: list[str] = []
+        seen_summaries: set[str] = set()
+
+        sections = (
+            ("ユーザーの思想", "preference"),
+            ("期待仕様", "spec"),
+            ("制約", "constraint"),
+            ("うまくいったこと", "success"),
+            ("避けたいこと", "failure"),
+            ("採用した判断", "decision"),
+        )
+        for title, kind in sections:
+            entries = [
+                entry
+                for entry in grouped[kind]
+                if _semantic_render_key(entry.summary) not in seen_summaries
+            ]
+            if not entries:
+                continue
+            lines.extend([f"### {title}", ""])
+            for entry in entries:
+                lines.append(f"- {entry.summary}")
+                seen_summaries.add(_semantic_render_key(entry.summary))
+            lines.append("")
+
+        if not lines:
+            return ["- まだ抽出できたプロジェクト記憶はありません。"]
+
+        if lines[-1] == "":
+            lines.pop()
+        return lines
+
+    def _worklog_section(self, handoff: HandoffDocument) -> list[str]:
+        grouped = grouped_worklog_entries(handoff.memory_snapshot)
+        sections = (
+            ("進捗", "progress"),
+            ("検証", "verification"),
+            ("直近コミット", "commit"),
+            ("変更ファイル", "change"),
+        )
+
+        lines: list[str] = []
+        for title, kind in sections:
+            entries = grouped[kind]
+            if not entries:
+                continue
+            lines.extend([f"### {title}", ""])
+            lines.extend(f"- {entry.summary}" for entry in entries)
+            lines.append("")
+
+        if not lines:
+            return ["- まだ抽出できた作業記録はありません。"]
+
+        if lines[-1] == "":
+            lines.pop()
+        return lines
+
     def _current_focus_section(self, handoff: HandoffDocument) -> list[str]:
+        if handoff.memory_snapshot.current_focus:
+            return [f"- {handoff.memory_snapshot.current_focus}"]
         tasks = _extract_actionable_items(handoff.manual_context.tasks_markdown)
         if tasks:
             return [f"- {tasks[0]}"]
         recent_session = handoff.recent_sessions[0] if handoff.recent_sessions else None
-        if recent_session and recent_session.latest_user_message:
-            return [f"- {recent_session.latest_user_message}"]
+        if recent_session:
+            summary = _substantive_focus_for_record(recent_session)
+            if summary:
+                return [f"- {summary}"]
         return ["- 現在の主題はまだ抽出できていません。"]
 
     def _recent_sessions_section(self, handoff: HandoffDocument) -> list[str]:
@@ -200,12 +282,18 @@ class CodexMarkdownRenderer:
         if meta_parts:
             lines.append(f"- {' / '.join(meta_parts)}")
 
-        if record.first_user_message:
-            lines.append(f"- 最初の依頼: {record.first_user_message}")
-        if record.latest_user_message and record.latest_user_message != record.first_user_message:
-            lines.append(f"- 直近の依頼: {record.latest_user_message}")
-        if record.latest_assistant_message:
-            lines.append(f"- 直近の回答: {record.latest_assistant_message}")
+        first_request = record.first_user_summary
+        latest_request = record.latest_substantive_user_summary or record.latest_user_summary
+        latest_reply = record.latest_assistant_summary
+        if not latest_reply and record.latest_assistant_message and not _looks_like_meta_memory_evaluation(record.latest_assistant_message):
+            latest_reply = record.latest_assistant_message
+
+        if first_request:
+            lines.append(f"- 最初の依頼: {first_request}")
+        if latest_request and latest_request != first_request:
+            lines.append(f"- 直近の依頼: {latest_request}")
+        if latest_reply:
+            lines.append(f"- 直近の回答: {latest_reply}")
         return lines
 
     def _current_state_section(self, handoff: HandoffDocument) -> list[str]:
@@ -253,16 +341,23 @@ class CodexMarkdownRenderer:
         recent_session = handoff.recent_sessions[0] if handoff.recent_sessions else None
         steps: list[str] = []
 
+        if handoff.memory_snapshot.current_focus and handoff.memory_snapshot.next_actions:
+            for index, action in enumerate(handoff.memory_snapshot.next_actions[:3], start=1):
+                steps.append(f"{index}. {action.summary}")
+            return steps
+
         if tasks:
             steps.append(f"1. `tasks.md` の先頭タスクを確認する: {tasks[0]}")
-        elif recent_session and recent_session.latest_user_message:
-            steps.append(f"1. 直近の依頼を起点に再開する: {recent_session.latest_user_message}")
+        elif recent_session and _substantive_focus_for_record(recent_session):
+            summary = _substantive_focus_for_record(recent_session)
+            steps.append(f"1. 直近の依頼を起点に再開する: {summary}")
         else:
             steps.append("1. `tasks.md` を確認して次の作業を 1 つ決める。")
 
-        if snapshot.is_repo and snapshot.changed_files:
-            focus_files = ", ".join(f"`{item.path}`" for item in snapshot.changed_files[:3])
-            suffix = " など" if len(snapshot.changed_files) > 3 else ""
+        focus_changed_files = select_user_facing_changed_files(snapshot.changed_files, limit=3)
+        if snapshot.is_repo and focus_changed_files:
+            focus_files = ", ".join(f"`{item.path}`" for item in focus_changed_files)
+            suffix = " など" if len(focus_changed_files) < len(snapshot.changed_files) else ""
             steps.append(f"2. 変更ファイルを確認して現在地を把握する: {focus_files}{suffix}")
         elif snapshot.is_repo and snapshot.recent_commits:
             latest = snapshot.recent_commits[0]
@@ -279,8 +374,11 @@ class CodexMarkdownRenderer:
         else:
             steps.append("2. `project.md` と `decisions.md` を見て、前提と判断を確認する。")
 
-        if recent_session and recent_session.latest_assistant_message:
-            summary = _truncate_step_text(recent_session.latest_assistant_message, 120)
+        if recent_session and (recent_session.latest_assistant_summary or recent_session.latest_assistant_message):
+            summary = _truncate_step_text(
+                recent_session.latest_assistant_summary or recent_session.latest_assistant_message,
+                120,
+            )
             steps.append(f"3. 直近の回答内容を踏まえて次の判断を置く: {summary}")
         else:
             steps.append("3. 制約・運用ルール・AGENTS.md を確認してから作業を進める。")
@@ -321,6 +419,19 @@ def _extract_actionable_items(markdown: str) -> list[str]:
         elif stripped.startswith("* [ ] "):
             items.append(stripped[6:].strip())
     return items
+
+
+def _substantive_focus_for_record(record: SessionRecord) -> str | None:
+    return summarize_actionable_request(
+        record.latest_substantive_user_summary
+        or record.first_user_summary
+        or record.first_user_message
+    )
+
+
+def _semantic_render_key(text: str) -> str:
+    cleaned = text.replace("`", "").strip().rstrip("。 ")
+    return " ".join(cleaned.split()).lower()
 
 
 def _extract_bulleted_items(markdown: str) -> list[str]:

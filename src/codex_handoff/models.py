@@ -54,11 +54,102 @@ class SessionRecord:
     cwd: str | None = None
     source_path: str | None = None
     first_user_message: str | None = None
+    first_user_summary: str | None = None
     latest_user_message: str | None = None
+    latest_user_summary: str | None = None
+    latest_substantive_user_message: str | None = None
+    latest_substantive_user_summary: str | None = None
     latest_assistant_message: str | None = None
+    latest_assistant_summary: str | None = None
+    assistant_has_final_answer: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "session_id": self.session_id,
+            "started_at": self.started_at,
+            "updated_at": self.updated_at,
+            "cwd": self.cwd,
+            "source_path": self.source_path,
+            "first_user_message": self.first_user_message,
+            "first_user_summary": self.first_user_summary,
+            "latest_user_message": self.latest_user_message,
+            "latest_user_summary": self.latest_user_summary,
+            "latest_substantive_user_message": self.latest_substantive_user_message,
+            "latest_substantive_user_summary": self.latest_substantive_user_summary,
+            "latest_assistant_message": self.latest_assistant_message,
+            "latest_assistant_summary": self.latest_assistant_summary,
+        }
+
+
+SemanticMemoryKind = Literal["preference", "spec", "constraint", "assessment", "success", "failure", "decision"]
+MemoryKind = SemanticMemoryKind
+WorklogKind = Literal["progress", "verification", "commit", "change"]
+
+
+@dataclass(slots=True)
+class MemoryEntry:
+    kind: MemoryKind
+    summary: str
+    topic: str | None = None
+    source_session_id: str | None = None
+    source_role: Literal["user", "assistant"] | None = None
+    updated_at: str | None = None
+    evidence_path: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+@dataclass(slots=True)
+class WorklogEntry:
+    kind: WorklogKind
+    summary: str
+    source: Literal["assistant_final", "git"] | None = None
+    source_session_id: str | None = None
+    updated_at: str | None = None
+    evidence_path: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class FocusPathEntry:
+    path: str
+    reason: Literal["changed", "mentioned", "important"]
+    note: str | None = None
+    updated_at: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class NextActionEntry:
+    summary: str
+    path: str | None = None
+    updated_at: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class MemorySnapshot:
+    semantic_entries: list[MemoryEntry] = field(default_factory=list)
+    worklog_entries: list[WorklogEntry] = field(default_factory=list)
+    current_focus: str | None = None
+    focus_paths: list[FocusPathEntry] = field(default_factory=list)
+    next_actions: list[NextActionEntry] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "semantic_entries": [item.to_dict() for item in self.semantic_entries],
+            "worklog_entries": [item.to_dict() for item in self.worklog_entries],
+            "current_focus": self.current_focus,
+            "focus_paths": [item.to_dict() for item in self.focus_paths],
+            "next_actions": [item.to_dict() for item in self.next_actions],
+        }
 
 
 @dataclass(slots=True)
@@ -100,6 +191,8 @@ class HandoffDocument:
     generated_at: str
     manual_context: ManualContext
     repo_snapshot: RepoSnapshot
+    memory_snapshot: MemorySnapshot = field(default_factory=MemorySnapshot)
+    user_memory_entries: list[MemoryEntry] = field(default_factory=list)
     recent_sessions: list[SessionRecord] = field(default_factory=list)
 
 

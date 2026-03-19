@@ -27,6 +27,15 @@ def write_build_assets(
     return icon_path, version_path
 
 
+def versioned_executable_name(
+    base_name: str = "CodexHandoffSetup",
+    *,
+    version: str = __version__,
+) -> str:
+    normalized_version = version.lstrip("v")
+    return f"{base_name}-{normalized_version}.exe"
+
+
 def build_version_info_text(
     *,
     internal_name: str = "CodexHandoffSetup",

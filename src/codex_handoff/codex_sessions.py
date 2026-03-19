@@ -4,9 +4,11 @@ import json
 from pathlib import Path
 
 from codex_handoff.config import default_config
+from codex_handoff.memory import summarize_assistant_reply
 from codex_handoff.models import ProjectConfig, SessionRecord
 from codex_handoff.paths import ProjectPaths
 from codex_handoff.relevance import is_transient_review_message
+from codex_handoff.summaries import summarize_user_request
 
 
 MAX_EXCERPT_CHARS = 280
@@ -121,12 +123,18 @@ class CodexSessionSource:
             text = _normalize_excerpt(payload.get("message"))
             if text:
                 is_review_message = is_transient_review_message(text)
+                summary = summarize_user_request(text)
                 if not record.first_user_message or (
                     is_transient_review_message(record.first_user_message) and not is_review_message
                 ):
                     record.first_user_message = text
+                    record.first_user_summary = summary
                 if not is_review_message or not record.latest_user_message:
                     record.latest_user_message = text
+                    record.latest_user_summary = summary
+                if summary:
+                    record.latest_substantive_user_message = text
+                    record.latest_substantive_user_summary = summary
             return
 
         if item_type != "response_item":
@@ -134,15 +142,24 @@ class CodexSessionSource:
         if payload.get("type") != "message" or payload.get("role") != "assistant":
             return
 
-        text = _extract_assistant_text(payload.get("content"))
+        raw_text = _extract_assistant_raw_text(payload.get("content"))
+        if not raw_text:
+            return
+        text = _normalize_excerpt(raw_text)
         if not text:
             return
+        summary = summarize_assistant_reply(raw_text)
 
         if payload.get("phase") == "final_answer":
             record.latest_assistant_message = text
+            record.latest_assistant_summary = summary
+            record.assistant_has_final_answer = True
             return
 
+        if record.assistant_has_final_answer:
+            return
         record.latest_assistant_message = text
+        record.latest_assistant_summary = summary
 
 
 def _paths_related(project_root: Path, session_cwd: Path) -> bool:
@@ -151,7 +168,7 @@ def _paths_related(project_root: Path, session_cwd: Path) -> bool:
     return cwd == root or root in cwd.parents
 
 
-def _extract_assistant_text(content: object) -> str | None:
+def _extract_assistant_raw_text(content: object) -> str | None:
     if not isinstance(content, list):
         return None
 
@@ -162,7 +179,7 @@ def _extract_assistant_text(content: object) -> str | None:
         text = item.get("text")
         if isinstance(text, str) and text.strip():
             parts.append(text)
-    return _normalize_excerpt("\n".join(parts))
+    return "\n".join(parts) if parts else None
 
 
 def _normalize_excerpt(value: object) -> str | None:

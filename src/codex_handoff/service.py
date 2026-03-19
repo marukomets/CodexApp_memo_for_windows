@@ -11,11 +11,24 @@ from codex_handoff.config import default_config, load_config, render_config, val
 from codex_handoff.codex_sessions import CodexSessionSource
 from codex_handoff.errors import CodexHandoffError
 from codex_handoff.files import has_utf8_bom, read_optional_text, write_text
-from codex_handoff.models import DoctorFinding, HandoffDocument, ManualContext, ProjectConfig, ReadmeContext, RepoSnapshot, SessionRecord
+from codex_handoff.focus import select_user_facing_changed_files
+from codex_handoff.memory import (
+    _classify_assistant_semantic_text,
+    _is_durable_assistant_semantic,
+    _looks_like_user_global_scope_fragment,
+    build_memory_snapshot,
+    build_user_memory_entries,
+    load_memory_snapshot,
+    load_user_memory,
+    render_memory_json,
+    render_user_memory_json,
+)
+from codex_handoff.models import DoctorFinding, HandoffDocument, ManualContext, MemorySnapshot, ProjectConfig, ReadmeContext, RepoSnapshot, SessionRecord
 from codex_handoff.paths import GlobalPaths, ProjectPaths, build_project_paths, get_global_paths
 from codex_handoff.relevance import is_transient_review_message, is_transient_review_note
 from codex_handoff.renderer import CodexMarkdownRenderer
 from codex_handoff.sources import AgentsSource, GitSource, ManualFilesSource, ReadmeSource
+from codex_handoff.summaries import split_summary_sentences, summarize_actionable_request, summarize_user_request
 from codex_handoff.templates import DECISIONS_TEMPLATE, NEXT_THREAD_TEMPLATE, PROJECT_TEMPLATE, TASKS_TEMPLATE
 
 LOCAL_MIRROR_BOM_FILE_NAMES = {
@@ -23,6 +36,7 @@ LOCAL_MIRROR_BOM_FILE_NAMES = {
     "project.md",
     "decisions.md",
     "tasks.md",
+    "memory.json",
     "state.json",
     "next-thread.md",
 }
@@ -34,6 +48,8 @@ def setup_global(install_global_agents: bool = False) -> tuple[GlobalPaths, bool
     global_paths.projects_dir.mkdir(parents=True, exist_ok=True)
     global_paths.codex_home.mkdir(parents=True, exist_ok=True)
     write_text(global_paths.app_home / "global-agents-snippet.md", build_agents_block())
+    if not global_paths.user_memory_file.exists():
+        write_text(global_paths.user_memory_file, _initial_user_memory_json())
     if not install_global_agents:
         return global_paths, False, None
     changed, backup_path = ensure_agents_block(global_paths.global_agents_file)
@@ -59,6 +75,7 @@ def initialize_project(start: Path) -> tuple[ProjectPaths, list[Path], list[Path
         (project_paths.project_file, PROJECT_TEMPLATE),
         (project_paths.decisions_file, DECISIONS_TEMPLATE),
         (project_paths.tasks_file, TASKS_TEMPLATE),
+        (project_paths.memory_file, _initial_memory_json(project_paths)),
         (project_paths.state_file, _initial_state_json(config.project_name, project_paths)),
         (project_paths.next_thread_file, NEXT_THREAD_TEMPLATE),
     ):
@@ -112,6 +129,7 @@ def run_doctor(start: Path) -> tuple[ProjectPaths, list[DoctorFinding]]:
     config: ProjectConfig | None = None
 
     findings.append(DoctorFinding("ok", "global_home", f"global store: {project_paths.global_paths.app_home}"))
+    findings.append(DoctorFinding("ok", "user_memory", f"user memory: {project_paths.global_paths.user_memory_file}"))
     findings.append(DoctorFinding("ok", "project_store", f"current project store: {project_paths.handoff_dir}"))
     findings.append(DoctorFinding("ok", "local_store", f"local mirror: {project_paths.local_handoff_dir}"))
     if migrated:
@@ -143,6 +161,7 @@ def run_doctor(start: Path) -> tuple[ProjectPaths, list[DoctorFinding]]:
         ("project", project_paths.project_file),
         ("decisions", project_paths.decisions_file),
         ("tasks", project_paths.tasks_file),
+        ("memory", project_paths.memory_file),
         ("state", project_paths.state_file),
         ("next_thread", project_paths.next_thread_file),
     ):
@@ -156,6 +175,7 @@ def run_doctor(start: Path) -> tuple[ProjectPaths, list[DoctorFinding]]:
         project_paths.project_file,
         project_paths.decisions_file,
         project_paths.tasks_file,
+        project_paths.memory_file,
         project_paths.state_file,
         project_paths.next_thread_file,
     ):
@@ -192,11 +212,35 @@ def _generate_handoff_outputs(
 ) -> tuple[RepoSnapshot, str]:
     readme_context = ReadmeSource(project_paths).collect()
     existing_context = _load_existing_generated_context(project_paths)
+    existing_memory = load_memory_snapshot(project_paths.memory_file)
     agents_markdown = AgentsSource(project_paths).collect().agents_markdown
+    user_memory_markdown = _build_user_memory_markdown(project_paths, agents_markdown)
+    existing_user_memory = load_user_memory(project_paths.global_paths.user_memory_file)
     snapshot = GitSource(project_paths, config).collect()
     markdown = ""
 
     for _ in range(3):
+        user_memory_entries = build_user_memory_entries(
+            recent_sessions,
+            existing_user_memory,
+            user_memory_markdown,
+            generated_at,
+        )
+        write_text(
+            project_paths.global_paths.user_memory_file,
+            render_user_memory_json(user_memory_entries, generated_at),
+        )
+        memory_snapshot = build_memory_snapshot(
+            project_paths.root,
+            recent_sessions,
+            existing_memory,
+            snapshot,
+            generated_at,
+        )
+        write_text(
+            project_paths.memory_file,
+            render_memory_json(project_paths, memory_snapshot, generated_at),
+        )
         write_text(
             project_paths.state_file,
             _render_state_json(
@@ -214,6 +258,8 @@ def _generate_handoff_outputs(
             recent_sessions,
             readme_context=readme_context,
             existing_context=existing_context,
+            memory_snapshot=memory_snapshot,
+            user_memory_entries=user_memory_entries,
             agents_markdown=agents_markdown,
             generated_at=generated_at,
             note_text=note_text,
@@ -226,6 +272,27 @@ def _generate_handoff_outputs(
             return snapshot, markdown
         snapshot = next_snapshot
 
+    user_memory_entries = build_user_memory_entries(
+        recent_sessions,
+        existing_user_memory,
+        user_memory_markdown,
+        generated_at,
+    )
+    write_text(
+        project_paths.global_paths.user_memory_file,
+        render_user_memory_json(user_memory_entries, generated_at),
+    )
+    memory_snapshot = build_memory_snapshot(
+        project_paths.root,
+        recent_sessions,
+        existing_memory,
+        snapshot,
+        generated_at,
+    )
+    write_text(
+        project_paths.memory_file,
+        render_memory_json(project_paths, memory_snapshot, generated_at),
+    )
     write_text(
         project_paths.state_file,
         _render_state_json(
@@ -243,6 +310,8 @@ def _generate_handoff_outputs(
         recent_sessions,
         readme_context=readme_context,
         existing_context=existing_context,
+        memory_snapshot=memory_snapshot,
+        user_memory_entries=user_memory_entries,
         agents_markdown=agents_markdown,
         generated_at=generated_at,
         note_text=note_text,
@@ -250,6 +319,12 @@ def _generate_handoff_outputs(
     markdown = _write_generated_documents(project_paths, document)
     _mirror_global_store_to_local(project_paths)
     return snapshot, markdown
+
+
+def _build_user_memory_markdown(project_paths: ProjectPaths, repo_agents_markdown: str) -> str:
+    global_agents_markdown = read_optional_text(project_paths.global_paths.global_agents_file).strip()
+    parts = [part for part in (global_agents_markdown, repo_agents_markdown) if part]
+    return "\n\n".join(parts)
 
 
 def _build_handoff_document(
@@ -260,6 +335,8 @@ def _build_handoff_document(
     *,
     readme_context: ReadmeContext,
     existing_context: ManualContext,
+    memory_snapshot: MemorySnapshot,
+    user_memory_entries: list[MemoryEntry],
     agents_markdown: str,
     generated_at: str,
     note_text: str | None = None,
@@ -269,6 +346,8 @@ def _build_handoff_document(
         readme_context,
         snapshot,
         recent_sessions,
+        memory_snapshot,
+        user_memory_entries,
         agents_markdown,
         existing_context,
         generated_at=generated_at,
@@ -281,6 +360,8 @@ def _build_handoff_document(
         generated_at=generated_at,
         manual_context=context,
         repo_snapshot=snapshot,
+        memory_snapshot=memory_snapshot,
+        user_memory_entries=user_memory_entries,
         recent_sessions=recent_sessions,
     )
 
@@ -303,6 +384,8 @@ def _build_generated_context(
     readme_context: ReadmeContext,
     snapshot: RepoSnapshot,
     recent_sessions: list[SessionRecord],
+    memory_snapshot: MemorySnapshot,
+    user_memory_entries: list[MemoryEntry],
     agents_markdown: str,
     existing_context: ManualContext,
     *,
@@ -312,11 +395,12 @@ def _build_generated_context(
     purpose = _derive_purpose(readme_context, recent_sessions)
     constraints = _derive_constraints(readme_context, snapshot, agents_markdown)
     important_files = _derive_important_files(project_paths, snapshot, recent_sessions)
-    operating_rules = _derive_operating_rules(readme_context, agents_markdown)
+    operating_rules = _derive_operating_rules(readme_context, agents_markdown, user_memory_entries)
     assumptions = _derive_assumptions(snapshot, recent_sessions)
     decisions_markdown = _merge_existing_bullets(
-        _derive_decisions(snapshot, recent_sessions),
+        _derive_decisions(snapshot, memory_snapshot),
         existing_context.decisions_markdown,
+        recent_sessions=recent_sessions,
     )
     tasks_markdown = _merge_existing_tasks(
         _derive_tasks(
@@ -327,6 +411,7 @@ def _build_generated_context(
             note_text=note_text,
         ),
         existing_context.tasks_markdown,
+        recent_sessions=recent_sessions,
     )
     return ManualContext(
         purpose=purpose or existing_context.purpose,
@@ -393,20 +478,50 @@ def _derive_important_files(
     return _render_code_bullets(_unique(items))
 
 
-def _derive_operating_rules(readme_context: ReadmeContext, agents_markdown: str) -> str:
+def _derive_operating_rules(
+    readme_context: ReadmeContext,
+    agents_markdown: str,
+    user_memory_entries: list[MemoryEntry],
+) -> str:
     blocks: list[str] = []
     for title in ("設計方針", "運用ルール", "Windows PowerShell 互換"):
         section = readme_context.sections.get(title)
         if section:
             blocks.append(section.strip())
 
-    agent_rules = _extract_rule_lines(agents_markdown)
+    shared_user_rules = _derive_user_memory_rules(user_memory_entries)
+    if shared_user_rules:
+        blocks.append(_render_bullets(shared_user_rules))
+
+    agent_rules = [
+        line
+        for line in _extract_rule_lines(agents_markdown)
+        if not _matches_user_memory_rule(line, shared_user_rules)
+    ]
     if agent_rules:
         blocks.append(_render_bullets(agent_rules))
 
     if not blocks:
         blocks.append(_render_bullets(["`codex-handoff prepare` / `capture` でメモを最新化してから作業を再開する。"]))
     return _merge_markdown_blocks(blocks)
+
+
+def _derive_user_memory_rules(user_memory_entries: list[MemoryEntry]) -> list[str]:
+    rule_kinds = {"preference", "constraint", "decision"}
+    return _unique([entry.summary for entry in user_memory_entries if entry.kind in rule_kinds])
+
+
+def _matches_user_memory_rule(candidate: str, shared_rules: list[str]) -> bool:
+    normalized_candidate = _normalize_rule_line(candidate)
+    if not normalized_candidate:
+        return False
+    return any(normalized_candidate == _normalize_rule_line(rule) for rule in shared_rules)
+
+
+def _normalize_rule_line(text: str) -> str:
+    normalized = text.strip().lower()
+    normalized = re.sub(r"[`\s/\\:;,.!?\-\(\)\[\]{}]+", "", normalized)
+    return normalized
 
 
 def _derive_assumptions(snapshot: RepoSnapshot, recent_sessions: list[SessionRecord]) -> str:
@@ -427,17 +542,16 @@ def _derive_assumptions(snapshot: RepoSnapshot, recent_sessions: list[SessionRec
     return _render_bullets(_unique(assumptions))
 
 
-def _derive_decisions(snapshot: RepoSnapshot, recent_sessions: list[SessionRecord]) -> str:
+def _derive_decisions(snapshot: RepoSnapshot, memory_snapshot: MemorySnapshot) -> str:
     decisions: list[str] = []
     if not snapshot.git_available:
         decisions.append(f"{now_local_iso()[:10]}: Git 非依存の workspace として handoff を生成する。")
     elif not snapshot.is_repo:
         decisions.append(f"{now_local_iso()[:10]}: Git 管理外のディレクトリとして path 単位で handoff を継続する。")
 
-    for record in reversed(recent_sessions[:6]):
-        date = _record_date(record)
-        for summary in _decision_summaries(record.latest_assistant_message):
-            decisions.append(f"{date}: {summary}")
+    for entry in (entry for entry in memory_snapshot.semantic_entries if entry.kind == "decision"):
+        date = (entry.updated_at or now_local_iso())[:10]
+        decisions.append(f"{date}: {entry.summary}")
 
     unique_decisions = _unique(decisions)
     if not unique_decisions:
@@ -453,30 +567,36 @@ def _derive_tasks(
     generated_at: str,
     note_text: str | None = None,
 ) -> str:
-    tasks: list[str] = []
+    primary_tasks: list[str] = []
+    secondary_tasks: list[str] = []
 
     if note_text:
-        tasks.append(f"{note_text} (captured {generated_at})")
+        primary_tasks.append(f"{note_text} (captured {generated_at})")
 
     for record in recent_sessions[:1]:
         if _session_task_completed(record):
             continue
-        task = _task_summary(record.latest_user_message)
+        task = _display_task_summary(record.latest_substantive_user_summary)
+        if not task:
+            task = _display_task_summary(record.latest_user_message)
+        if not task:
+            task = _display_task_summary(record.first_user_message)
         if task:
-            tasks.append(task)
+            primary_tasks.append(task)
 
-    if snapshot.changed_files:
-        focus_files = ", ".join(f"`{item.path}`" for item in snapshot.changed_files[:3])
-        suffix = " など" if len(snapshot.changed_files) > 3 else ""
-        tasks.append(f"変更ファイルを確認する: {focus_files}{suffix}")
+    focus_changed_files = select_user_facing_changed_files(snapshot.changed_files, limit=3)
+    if focus_changed_files:
+        focus_files = ", ".join(f"`{item.path}`" for item in focus_changed_files)
+        suffix = " など" if len(focus_changed_files) < len(snapshot.changed_files) else ""
+        secondary_tasks.append(f"変更ファイルを確認する: {focus_files}{suffix}")
     elif snapshot.detected_important_paths:
         focus_paths = ", ".join(f"`{path}`" for path in snapshot.detected_important_paths[:3])
-        tasks.append(f"重要ファイルを確認して文脈を戻す: {focus_paths}")
+        secondary_tasks.append(f"重要ファイルを確認して文脈を戻す: {focus_paths}")
 
-    if not tasks and project_paths.repo_agents_file.exists():
-        tasks.append("`AGENTS.md` と `next-thread.md` を確認して次の作業を決める。")
+    if not primary_tasks and not secondary_tasks and project_paths.repo_agents_file.exists():
+        secondary_tasks.append("`AGENTS.md`、`memory.json`、`next-thread.md` を確認して次の作業を決める。")
 
-    unique_tasks = _unique(tasks)
+    unique_tasks = _rank_tasks(primary_tasks + secondary_tasks)
     if not unique_tasks:
         return "- [ ] 次に進める作業はまだ抽出できていません。"
     return "\n".join(f"- [ ] {item}" for item in unique_tasks[:5])
@@ -486,6 +606,8 @@ def _ensure_project_store(project_paths: ProjectPaths) -> None:
     project_paths.global_paths.app_home.mkdir(parents=True, exist_ok=True)
     project_paths.global_paths.projects_dir.mkdir(parents=True, exist_ok=True)
     project_paths.handoff_dir.mkdir(parents=True, exist_ok=True)
+    if not project_paths.global_paths.user_memory_file.exists():
+        write_text(project_paths.global_paths.user_memory_file, _initial_user_memory_json())
 
 
 def _load_existing_generated_context(project_paths: ProjectPaths) -> ManualContext:
@@ -569,6 +691,7 @@ def _mirror_pairs(project_paths: ProjectPaths) -> tuple[tuple[Path, Path], ...]:
         (project_paths.project_file, local_dir / "project.md"),
         (project_paths.decisions_file, local_dir / "decisions.md"),
         (project_paths.tasks_file, local_dir / "tasks.md"),
+        (project_paths.memory_file, local_dir / "memory.json"),
         (project_paths.state_file, local_dir / "state.json"),
         (project_paths.next_thread_file, local_dir / "next-thread.md"),
     )
@@ -606,7 +729,11 @@ def _matches_template(path: Path, template: str) -> bool:
 
 def _latest_substantive_user_request(recent_sessions: list[SessionRecord]) -> str | None:
     for record in recent_sessions:
-        task = _task_summary(record.latest_user_message)
+        task = _display_task_summary(record.latest_substantive_user_summary)
+        if not task:
+            task = _display_task_summary(record.latest_user_message)
+        if not task:
+            task = _display_task_summary(record.first_user_message)
         if task:
             return task
     return None
@@ -638,10 +765,17 @@ def _decision_summaries(text: str | None) -> list[str]:
 
 
 def _task_summary(text: str | None) -> str | None:
-    cleaned = _clean_summary_text(text)
-    if not cleaned or _is_trivial_message(cleaned) or is_transient_review_message(cleaned):
+    cleaned = summarize_user_request(text, limit=160)
+    if not cleaned or _is_trivial_message(cleaned):
         return None
-    return _truncate(cleaned, 160)
+    return cleaned
+
+
+def _display_task_summary(text: str | None) -> str | None:
+    cleaned = summarize_actionable_request(text, limit=160)
+    if not cleaned or _is_trivial_message(cleaned):
+        return None
+    return cleaned
 
 
 def _clean_summary_text(text: str | None) -> str | None:
@@ -653,13 +787,16 @@ def _clean_summary_text(text: str | None) -> str | None:
 
 
 def _extract_sentences(text: str) -> list[str]:
-    normalized = text.replace(" - ", "。")
-    parts = re.split(r"(?<=[。！？.!?])\s+", normalized)
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n").replace(" - ", "。")
     sentences: list[str] = []
-    for part in parts:
-        sentence = part.strip(" -")
-        if sentence:
-            sentences.append(sentence)
+    for raw_line in normalized.splitlines():
+        line = re.sub(r"^(?:[-*]\s+|\d+\.\s+)", "", raw_line.strip())
+        if not line:
+            continue
+        for part in split_summary_sentences(line):
+            sentence = part.strip(" -")
+            if sentence:
+                sentences.append(sentence)
     return sentences
 
 
@@ -727,7 +864,9 @@ def _is_trivial_decision_message(text: str) -> bool:
 
 
 def _session_task_completed(record: SessionRecord) -> bool:
-    task = _task_summary(record.latest_user_message)
+    task = record.latest_substantive_user_summary or _task_summary(record.latest_user_message)
+    if not task:
+        task = _task_summary(record.first_user_message)
     if not task:
         return False
     return _assistant_indicates_completion(record.latest_assistant_message)
@@ -811,19 +950,37 @@ def _extract_rule_lines(markdown: str) -> list[str]:
     return lines
 
 
-def _merge_existing_bullets(current_markdown: str, existing_markdown: str) -> str:
+def _merge_existing_bullets(
+    current_markdown: str,
+    existing_markdown: str,
+    *,
+    recent_sessions: list[SessionRecord],
+) -> str:
     current_items = _extract_bullet_lines(current_markdown)
-    existing_items = _extract_existing_decision_lines(existing_markdown)
+    existing_items = _extract_existing_decision_lines(
+        existing_markdown,
+        recent_sessions=recent_sessions,
+        current_items=current_items,
+    )
     merged = _unique(current_items + existing_items)
     if not merged:
         return "- 決定事項はまだ抽出できていません。"
     return _render_bullets(merged)
 
 
-def _merge_existing_tasks(current_markdown: str, existing_markdown: str) -> str:
+def _merge_existing_tasks(
+    current_markdown: str,
+    existing_markdown: str,
+    *,
+    recent_sessions: list[SessionRecord],
+) -> str:
     current_items = _extract_actionable_task_lines(current_markdown)
-    existing_items = _extract_preserved_task_lines(existing_markdown)
-    merged = _unique(current_items + existing_items)
+    existing_items = _extract_preserved_task_lines(
+        existing_markdown,
+        current_items=current_items,
+        recent_sessions=recent_sessions,
+    )
+    merged = _rank_tasks(current_items + existing_items)
     if not merged:
         return "- [ ] 次に進める作業はまだ抽出できていません。"
     return "\n".join(f"- [ ] {item}" for item in merged[:5])
@@ -844,12 +1001,33 @@ def _extract_actionable_task_lines(markdown: str) -> list[str]:
     return items
 
 
-def _extract_preserved_task_lines(markdown: str) -> list[str]:
+def _extract_preserved_task_lines(
+    markdown: str,
+    *,
+    current_items: list[str],
+    recent_sessions: list[SessionRecord],
+) -> list[str]:
     items: list[str] = []
+    recent_tasks = [
+        task
+        for task in (
+            _display_task_summary(record.latest_substantive_user_summary)
+            or _display_task_summary(record.latest_user_message)
+            for record in recent_sessions
+        )
+        if task
+    ]
     for task in _extract_actionable_task_lines(markdown):
         if _is_generated_housekeeping_task(task):
             continue
-        items.append(task)
+        normalized_task = _display_task_summary(task) or _task_summary(task) or (_clean_summary_text(task) or task)
+        if not _looks_like_preserved_task(normalized_task):
+            continue
+        if _matches_any_normalized_item(normalized_task, current_items):
+            continue
+        if _matches_any_normalized_item(normalized_task, recent_tasks):
+            continue
+        items.append(normalized_task)
     return items
 
 
@@ -858,26 +1036,193 @@ def _is_generated_housekeeping_task(task: str) -> bool:
         (
             "変更ファイルを確認する:",
             "重要ファイルを確認して文脈を戻す:",
-            "`AGENTS.md` と `next-thread.md` を確認して次の作業を決める。",
+            "`AGENTS.md`、`memory.json`、`next-thread.md` を確認して次の作業を決める。",
         )
     )
 
 
-def _extract_existing_decision_lines(markdown: str) -> list[str]:
+def _extract_existing_decision_lines(
+    markdown: str,
+    *,
+    recent_sessions: list[SessionRecord],
+    current_items: list[str],
+) -> list[str]:
     items: list[str] = []
+    recent_items = current_items
     for line in _extract_bullet_lines(markdown):
         if line.startswith("自動更新:") or line.startswith("生成日時:"):
             continue
         if re.match(r"\d{4}-\d{2}-\d{2}:", line):
             _, _, body = line.partition(":")
-            if body.strip() and _looks_like_decision(body.strip()) and not is_transient_review_note(body.strip()):
-                items.append(_truncate(line, 140))
+            cleaned_body = body.strip()
+            if (
+                cleaned_body
+                and not is_transient_review_note(cleaned_body)
+                and not _is_verbose_generated_decision(cleaned_body)
+                and (
+                    _looks_like_preservable_generated_decision(cleaned_body)
+                    or _looks_like_manual_preserved_decision(cleaned_body)
+                )
+            ):
+                candidate = _truncate(line, 140)
+                if not _matches_any_normalized_item(candidate, recent_items):
+                    items.append(candidate)
             continue
         if is_transient_review_note(line):
             continue
-        if _looks_like_decision(line):
-            items.append(_truncate(line, 140))
+        if not (
+            _looks_like_preservable_generated_decision(line)
+            or _looks_like_manual_preserved_decision(line)
+        ):
+            continue
+        candidate = _truncate(line, 140)
+        if not _matches_any_normalized_item(candidate, recent_items):
+            items.append(candidate)
     return items
+
+
+def _looks_like_preservable_generated_decision(text: str) -> bool:
+    return any(
+        _is_durable_assistant_semantic(text, kind)
+        for kind in _classify_assistant_semantic_text(text)
+        if kind == "decision"
+    )
+
+
+def _looks_like_manual_preserved_decision(text: str) -> bool:
+    cleaned = _clean_summary_text(text) or ""
+    if not cleaned:
+        return False
+    if _looks_like_user_global_scope_fragment(cleaned):
+        return False
+    if len(cleaned) > 40:
+        return False
+    if any(marker in cleaned for marker in ("`", ".py", ".md", ".json", ".exe", "global store", "memory.json", "next-thread", "staged/unstaged")):
+        return False
+    return "。" not in cleaned and "、" not in cleaned
+
+
+def _is_verbose_generated_decision(text: str) -> bool:
+    cleaned = _clean_summary_text(text) or ""
+    if not cleaned:
+        return False
+    if cleaned.startswith(
+        (
+            "方針は固まりました。",
+            "実装方針は見えました。",
+            "今回で効いた点は",
+            "その通りです。",
+            "新しいスレッド開始時に",
+            "このリポジトリの設定どおり確認します。",
+            "まず ",
+        )
+    ):
+        return True
+    return cleaned.count("。") >= 2 and len(cleaned) > 90
+
+
+def _looks_like_preserved_task(task: str) -> bool:
+    cleaned = _clean_summary_text(task)
+    if not cleaned:
+        return False
+    if _task_summary(cleaned) is None and not _looks_like_manual_action_task(cleaned):
+        return False
+    if "？" in cleaned or "?" in cleaned:
+        return False
+    if cleaned.startswith(("そうだね。", "とりあえず", "かなりいい感じ", "これって")):
+        return False
+    if any(keyword in cleaned for keyword in ("だよね", "いいね", "かな", "見よう")) and not any(
+        action in cleaned for action in ("確認", "更新", "修正", "実装", "追加", "テスト", "配布", "インストール", "ビルド")
+    ):
+        return False
+    return True
+
+
+def _matches_any_normalized_item(text: str, candidates: list[str]) -> bool:
+    normalized = _normalize_merge_item(text)
+    if not normalized:
+        return False
+    for candidate in candidates:
+        other = _normalize_merge_item(candidate)
+        if not other:
+            continue
+        if normalized == other or normalized.startswith(other) or other.startswith(normalized):
+            return True
+    return False
+
+
+def _normalize_merge_item(text: str) -> str:
+    cleaned = _clean_summary_text(text) or ""
+    cleaned = re.sub(r"^\d{4}-\d{2}-\d{2}:\s*", "", cleaned)
+    cleaned = re.sub(r"^\*\*[^*]+\*\*\s*", "", cleaned)
+    cleaned = re.sub(
+        r"^(?:方針は固まりました。|実装方針は見えました。|今回で効いた点は \d+ つです。|その通りです。|結論としては|結果としては)\s*",
+        "",
+        cleaned,
+    )
+    cleaned = cleaned.replace("…", "")
+    cleaned = cleaned.rstrip("。 ")
+    return cleaned
+
+
+def _rank_tasks(tasks: list[str]) -> list[str]:
+    unique_items = _dedupe_task_items(tasks)
+    ranked = sorted(enumerate(unique_items), key=lambda item: (_task_sort_key(item[1]), item[0]))
+    return [task for _, task in ranked]
+
+
+def _dedupe_task_items(tasks: list[str]) -> list[str]:
+    deduped: dict[str, str] = {}
+    passthrough: list[str] = []
+    for task in tasks:
+        cleaned = task.strip()
+        if not cleaned:
+            continue
+        key = _normalize_task_merge_key(cleaned)
+        if not key:
+            passthrough.append(cleaned)
+            continue
+        deduped.setdefault(key, cleaned)
+    return [*passthrough, *deduped.values()]
+
+
+def _normalize_task_merge_key(text: str) -> str:
+    cleaned = _task_summary(text) or _clean_summary_text(text) or ""
+    cleaned = re.sub(r"^(?:- \[ \]\s*)", "", cleaned)
+    cleaned = re.sub(r"\b(?:したいな|いいね|かな|でしょ)\b", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _task_sort_key(task: str) -> int:
+    housekeeping = _is_generated_housekeeping_task(task)
+    manual_action = _looks_like_manual_action_task(task)
+    summary = _task_summary(task)
+    if summary:
+        return 0 if not housekeeping else 2
+    if manual_action:
+        return 1 if not housekeeping else 3
+    return 4
+
+
+def _looks_like_manual_action_task(task: str) -> bool:
+    return any(
+        marker in task
+        for marker in (
+            "確認",
+            "更新",
+            "修正",
+            "実装",
+            "追加",
+            "テスト",
+            "配布",
+            "インストール",
+            "ビルド",
+            "整理",
+            "評価",
+            "調整",
+        )
+    )
 
 
 def _record_date(record: SessionRecord) -> str:
@@ -957,6 +1302,30 @@ def _initial_state_json(project_name: str, project_paths: ProjectPaths) -> str:
         "git_root": None,
         "repo_agents_file": "AGENTS.md" if project_paths.repo_agents_file.exists() else None,
         "recent_sessions": [],
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+
+
+def _initial_memory_json(project_paths: ProjectPaths) -> str:
+    payload = {
+        "version": 2,
+        "project_id": project_paths.project_id,
+        "project_name": project_paths.root.name,
+        "updated_at": None,
+        "semantic_entries": [],
+        "worklog_entries": [],
+        "current_focus": None,
+        "focus_paths": [],
+        "next_actions": [],
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+
+
+def _initial_user_memory_json() -> str:
+    payload = {
+        "version": 1,
+        "updated_at": None,
+        "entries": [],
     }
     return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 

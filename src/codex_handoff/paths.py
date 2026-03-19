@@ -21,6 +21,7 @@ class GlobalPaths:
     projects_dir: Path
     codex_home: Path
     global_agents_file: Path
+    user_memory_file: Path
 
 
 @dataclass(slots=True)
@@ -33,6 +34,7 @@ class ProjectPaths:
     project_file: Path
     decisions_file: Path
     tasks_file: Path
+    memory_file: Path
     state_file: Path
     next_thread_file: Path
     repo_agents_file: Path
@@ -47,6 +49,7 @@ def get_global_paths() -> GlobalPaths:
         projects_dir=app_home / "projects",
         codex_home=codex_home,
         global_agents_file=codex_home / "AGENTS.md",
+        user_memory_file=app_home / "user-memory.json",
     )
 
 
@@ -64,6 +67,7 @@ def build_project_paths(start: Path) -> ProjectPaths:
         project_file=handoff_dir / "project.md",
         decisions_file=handoff_dir / "decisions.md",
         tasks_file=handoff_dir / "tasks.md",
+        memory_file=handoff_dir / "memory.json",
         state_file=handoff_dir / "state.json",
         next_thread_file=handoff_dir / "next-thread.md",
         repo_agents_file=root / "AGENTS.md",

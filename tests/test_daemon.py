@@ -55,6 +55,7 @@ def test_background_sync_creates_store_for_new_workspace(tmp_path: Path, monkeyp
     store = global_home / "projects" / make_project_id(new_workspace)
     assert store.exists()
     assert (store / "project.md").exists()
+    assert (store / "memory.json").exists()
     assert (store / "state.json").exists()
     assert (store / "next-thread.md").exists()
     assert (new_workspace / ".codex-handoff" / "project.md").exists()

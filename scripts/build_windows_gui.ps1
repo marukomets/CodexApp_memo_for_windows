@@ -57,3 +57,17 @@ if ($OneFile) {
 }
 
 uv run --group build pyinstaller @args
+
+$primaryExe = Join-Path "dist" "$Name.exe"
+if (Test-Path $primaryExe) {
+    Get-ChildItem -Path (Join-Path "dist" "$Name-*.exe") -ErrorAction SilentlyContinue |
+        Remove-Item -Force
+
+    $versionedName = uv run python -c "from codex_handoff.build_assets import versioned_executable_name; print(versioned_executable_name('$Name'))"
+    $versionedName = $versionedName.Trim()
+    $versionedExe = Join-Path "dist" $versionedName
+    Copy-Item $primaryExe $versionedExe -Force
+    Write-Host "Built installer artifacts:"
+    Write-Host "  $primaryExe"
+    Write-Host "  $versionedExe"
+}
