@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 
 from codex_handoff.config import default_config
 from codex_handoff.files import parse_markdown_sections, read_optional_text, strip_first_heading, to_posix_path
+from codex_handoff.localization import detect_language
 from codex_handoff.models import (
     CommitSummary,
     FileChange,
@@ -26,11 +27,11 @@ from codex_handoff.processes import hidden_subprocess_kwargs
 
 
 SECTION_NAMES = {
-    "purpose": "\u76ee\u7684",
-    "constraints": "\u5236\u7d04",
-    "important_files": "\u91cd\u8981\u30d5\u30a1\u30a4\u30eb",
-    "operating_rules": "\u904b\u7528\u30eb\u30fc\u30eb",
-    "assumptions": "\u4eee\u5b9a",
+    "purpose": ("\u76ee\u7684", "Purpose"),
+    "constraints": ("\u5236\u7d04", "Constraints"),
+    "important_files": ("\u91cd\u8981\u30d5\u30a1\u30a4\u30eb", "Important files"),
+    "operating_rules": ("\u904b\u7528\u30eb\u30fc\u30eb", "Operating rules"),
+    "assumptions": ("\u4eee\u5b9a", "Assumptions"),
 }
 SECTION_ORDER = ("purpose", "constraints", "important_files", "operating_rules", "assumptions")
 
@@ -66,8 +67,10 @@ class ReadmeSource:
         self.paths = paths
 
     def collect(self) -> ReadmeContext:
-        readme_path = self.paths.root / "README.md"
-        if not readme_path.exists():
+        language = detect_language()
+        candidate_names = ("README.en.md", "README.md") if language == "en" else ("README.md", "README.en.md")
+        readme_path = next((self.paths.root / name for name in candidate_names if (self.paths.root / name).exists()), None)
+        if readme_path is None:
             return ReadmeContext()
 
         markdown = read_optional_text(readme_path)
@@ -327,9 +330,10 @@ def _extract_readme_intro(body: str) -> str:
 
 
 def _get_section(sections: dict[str, str], ordered_values: list[str], key: str) -> str:
-    value = sections.get(SECTION_NAMES[key])
-    if value:
-        return value
+    for alias in SECTION_NAMES[key]:
+        value = sections.get(alias)
+        if value:
+            return value
 
     index = SECTION_ORDER.index(key)
     if index < len(ordered_values):

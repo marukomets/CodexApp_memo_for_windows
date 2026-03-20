@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 from codex_handoff.files import read_optional_text, write_text
+from codex_handoff.localization import t
 
 BLOCK_START = "<!-- codex-handoff:start -->"
 BLOCK_END = "<!-- codex-handoff:end -->"
@@ -48,12 +49,12 @@ def build_agents_block() -> str:
     lines = [
         BLOCK_START,
         "## codex-handoff",
-        "- ローカル作業を始める前に、カレントディレクトリで `codex-handoff prepare --stdout` を試し、その出力を前提として扱う。",
-        "- 共通ユーザー設定があれば、まず `~/.codex-handoff/user-memory.json` を読んで前提に含める。",
-        "- `codex-handoff` は現在の作業ディレクトリからプロジェクトを自動判定し、`~/.codex-handoff/projects/...` を正本として再利用しつつ、リポジトリ内 `.codex-handoff/` に同期ミラーを置く前提で進める。",
-        "- 手動で前スレッドを説明し直させず、まずリポジトリ内 `.codex-handoff/project.md`、`.codex-handoff/decisions.md`、`.codex-handoff/tasks.md`、`.codex-handoff/memory.json`、`.codex-handoff/next-thread.md` を読む。",
-        "- `memory.json` は構造化メモリの正本で、ユーザーの思想・仕様・制約・採用判断と、進捗・検証・コミット・変更ファイルに加えて、現在の主題・注目パス・次アクションを分けて保持する前提で扱う。",
-        "- `codex-handoff` が利用できない場合だけ、その旨を短く伝えて通常どおり進める。",
+        t("bootstrap.prepare_first"),
+        t("bootstrap.user_memory"),
+        t("bootstrap.project_scope"),
+        t("bootstrap.read_docs"),
+        t("bootstrap.memory_contract"),
+        t("bootstrap.fallback"),
         BLOCK_END,
     ]
     return "\n".join(lines) + "\n"

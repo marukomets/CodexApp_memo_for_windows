@@ -4,6 +4,8 @@
 
 正本のメモは `~/.codex-handoff/projects/<project-id>/` に保存しつつ、各リポジトリの `.codex-handoff/` に読みやすい同期ミラーを置きます。Codex 側の読み込み導線は `~/.codex/AGENTS.md` へ 1 回だけ入れます。
 
+英語の案内は [README.en.md](README.en.md) にあります。GUI と生成される handoff の言語は `CODEX_HANDOFF_LANG` で `ja` / `en` / `auto` を切り替えられます。
+
 v2.1 では shell を使いたくない人向けに `codex-handoff-ui` を追加しました。配布時はこの GUI を単体 `exe` にして配り、初回起動時に `%LOCALAPPDATA%\CodexHandoff` へ自己インストールできます。
 
 v2.2 では background sync を追加し、初回セットアップ後は GUI を開かなくても active workspace の handoff を裏で更新できるようにしました。
@@ -260,8 +262,8 @@ GitHub Releases 向けの Windows ビルド workflow は [release-windows.yml](.
 想定フロー:
 
 ```powershell
-git tag v0.6.9
-git push origin v0.6.9
+git tag v0.6.10
+git push origin v0.6.10
 ```
 
 ## ライセンス

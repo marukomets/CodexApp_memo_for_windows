@@ -21,6 +21,7 @@ from codex_handoff.installer import (
     stop_managed_processes,
     launch_background_sync,
 )
+from codex_handoff.localization import detect_language, set_language, t
 from codex_handoff.paths import GlobalPaths, get_global_paths
 from codex_handoff.service import setup_global, uninstall_global_agents
 
@@ -49,6 +50,8 @@ def main() -> None:
 class CodexHandoffDesktop(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
+        self.language = detect_language()
+        set_language(self.language)
         self.title("Codex Handoff")
         self.geometry("860x620")
         self.minsize(780, 560)
@@ -57,7 +60,7 @@ class CodexHandoffDesktop(tk.Tk):
         self.workspace_state = load_codex_workspace_state(self.global_paths.codex_home)
         self.view_state: SetupViewState | None = None
 
-        self.status_var = tk.StringVar(value="準備完了")
+        self.status_var = tk.StringVar(value=t("gui.status.ready", language=self.language))
         self.install_status_var = tk.StringVar()
         self.automation_status_var = tk.StringVar()
         self.finish_summary_var = tk.StringVar()
@@ -76,6 +79,9 @@ class CodexHandoffDesktop(tk.Tk):
         self._build_ui()
         self.refresh_state(auto_show=True)
 
+    def _text(self, key: str, **kwargs: object) -> str:
+        return t(key, language=self.language, **kwargs)
+
     def _build_ui(self) -> None:
         container = ttk.Frame(self, padding=20)
         container.pack(fill="both", expand=True)
@@ -85,7 +91,7 @@ class CodexHandoffDesktop(tk.Tk):
         ttk.Label(header, text="Codex Handoff", font=("Segoe UI", 22, "bold")).pack(anchor="w")
         ttk.Label(
             header,
-            text="初回セットアップだけを行う companion app です。以後は GUI を開かなくても、active workspace の handoff を自動更新します。",
+            text=self._text("gui.subtitle"),
             wraplength=780,
         ).pack(anchor="w", pady=(4, 0))
 
@@ -105,26 +111,26 @@ class CodexHandoffDesktop(tk.Tk):
         frame = ttk.Frame(self.screen_container)
         self.screens["install"] = frame
 
-        ttk.Label(frame, text="Step 1: Install app", font=("Segoe UI", 18, "bold")).pack(anchor="w")
+        ttk.Label(frame, text=self._text("gui.step.install.title"), font=("Segoe UI", 18, "bold")).pack(anchor="w")
         ttk.Label(
             frame,
-            text="この実行ファイルを %LOCALAPPDATA%\\CodexHandoff にコピーします。以後の更新はここに上書きされます。",
+            text=self._text("gui.step.install.description"),
             wraplength=760,
         ).pack(anchor="w", pady=(8, 0))
         ttk.Label(frame, textvariable=self.install_status_var, wraplength=760, justify="left").pack(anchor="w", pady=(14, 0))
 
         shortcuts = ttk.Frame(frame)
         shortcuts.pack(anchor="w", pady=(18, 0))
-        ttk.Checkbutton(shortcuts, text="デスクトップにショートカットを作成", variable=self.create_desktop_shortcut_var).pack(side="left")
+        ttk.Checkbutton(shortcuts, text=self._text("gui.check.desktop_shortcut"), variable=self.create_desktop_shortcut_var).pack(side="left")
         ttk.Checkbutton(
             shortcuts,
-            text="スタートメニューにショートカットを作成",
+            text=self._text("gui.check.start_menu_shortcut"),
             variable=self.create_start_menu_shortcut_var,
         ).pack(side="left", padx=(12, 0))
 
         actions = ttk.Frame(frame)
         actions.pack(anchor="w", pady=(24, 0))
-        self.install_button = ttk.Button(actions, text="Install to LocalAppData", command=self.install_app_to_local_appdata)
+        self.install_button = ttk.Button(actions, text=self._text("gui.button.install"), command=self.install_app_to_local_appdata)
         self.install_button.pack(side="left")
 
     def _build_configure_screen(self) -> None:
@@ -132,38 +138,35 @@ class CodexHandoffDesktop(tk.Tk):
         frame = ttk.Frame(self.screen_container)
         self.screens["configure"] = frame
 
-        ttk.Label(frame, text="Step 2: Enable automation", font=("Segoe UI", 18, "bold")).pack(anchor="w")
+        ttk.Label(frame, text=self._text("gui.step.configure.title"), font=("Segoe UI", 18, "bold")).pack(anchor="w")
         ttk.Label(
             frame,
-            text="ここで machine 単位の自動設定を行います。完了後は新しいプロジェクトでも自動追従します。",
+            text=self._text("gui.step.configure.description"),
             wraplength=760,
         ).pack(anchor="w", pady=(8, 0))
         ttk.Label(frame, textvariable=self.automation_status_var, wraplength=760, justify="left").pack(anchor="w", pady=(14, 0))
 
         ttk.Checkbutton(
             frame,
-            text="~/.codex/AGENTS.md に automatic loading を設定する",
+            text=self._text("gui.check.auto_loading"),
             variable=self.auto_loading_var,
         ).pack(anchor="w", pady=(18, 0))
         ttk.Checkbutton(
             frame,
-            text="サインイン時に background sync を自動起動する",
+            text=self._text("gui.check.background_sync"),
             variable=self.background_sync_var,
         ).pack(anchor="w", pady=(8, 0))
 
         ttk.Label(
             frame,
-            text=(
-                "Automatic loading を有効にすると ~/.codex/AGENTS.md の codex-handoff 管理ブロックを追加または更新します。"
-                "既存ファイルがある場合は必ずバックアップを作成し、管理ブロック以外は置き換えません。"
-            ),
+            text=self._text("gui.info.setup"),
             wraplength=760,
             justify="left",
         ).pack(anchor="w", pady=(18, 0))
 
         actions = ttk.Frame(frame)
         actions.pack(anchor="w", pady=(24, 0))
-        self.run_setup_button = ttk.Button(actions, text="Apply setup", command=self.run_guided_setup)
+        self.run_setup_button = ttk.Button(actions, text=self._text("gui.button.apply"), command=self.run_guided_setup)
         self.run_setup_button.pack(side="left")
 
     def _build_finish_screen(self) -> None:
@@ -171,17 +174,17 @@ class CodexHandoffDesktop(tk.Tk):
         frame = ttk.Frame(self.screen_container)
         self.screens["finish"] = frame
 
-        ttk.Label(frame, text="Done", font=("Segoe UI", 18, "bold")).pack(anchor="w")
+        ttk.Label(frame, text=self._text("gui.step.done.title"), font=("Segoe UI", 18, "bold")).pack(anchor="w")
         ttk.Label(
             frame,
-            text="セットアップは完了です。以後は GUI を開かなくても background sync が active workspace の handoff を自動更新します。",
+            text=self._text("gui.step.done.description"),
             wraplength=760,
         ).pack(anchor="w", pady=(8, 0))
         ttk.Label(frame, textvariable=self.finish_summary_var, wraplength=760, justify="left").pack(anchor="w", pady=(16, 0))
 
         actions = ttk.Frame(frame)
         actions.pack(anchor="w", pady=(24, 0))
-        ttk.Button(actions, text="閉じる", command=self.destroy).pack(side="left")
+        ttk.Button(actions, text=self._text("gui.button.close"), command=self.destroy).pack(side="left")
 
     def refresh_state(self, auto_show: bool = False) -> None:
         self.global_paths = get_global_paths()
@@ -200,18 +203,16 @@ class CodexHandoffDesktop(tk.Tk):
             background_enabled=background_enabled,
             desired_auto_loading=self.auto_loading_var.get(),
             desired_background_sync=self.background_sync_var.get(),
+            language=self.language,
         )
 
-        self.install_status_var.set(
-            render_install_status(
-                installed=installed,
-            )
-        )
+        self.install_status_var.set(render_install_status(installed=installed, language=self.language))
         self.automation_status_var.set(
             render_automation_status(
                 global_paths=self.global_paths,
                 agents_enabled=agents_enabled,
                 background_enabled=background_enabled,
+                language=self.language,
             )
         )
         self.finish_summary_var.set(
@@ -220,6 +221,7 @@ class CodexHandoffDesktop(tk.Tk):
                 workspace_state=self.workspace_state,
                 agents_enabled=agents_enabled,
                 background_enabled=background_enabled,
+                language=self.language,
             )
         )
 
@@ -230,7 +232,7 @@ class CodexHandoffDesktop(tk.Tk):
 
         if auto_show or self.current_screen_name is None:
             self.show_screen(self.view_state.screen)
-        self.status_var.set("状態を更新しました")
+        self.status_var.set(self._text("gui.status.updated"))
 
     def show_screen(self, screen_name: str) -> None:
         for name, frame in self.screens.items():
@@ -243,16 +245,14 @@ class CodexHandoffDesktop(tk.Tk):
     def install_app_to_local_appdata(self) -> None:
         if not can_self_install():
             messagebox.showinfo(
-                "Codex Handoff",
-                "自己インストールは配布 exe から起動した場合のみ使えます。開発中はビルド済み exe から試してください。",
+                self._text("gui.message.install.title"),
+                self._text("gui.message.install.unavailable"),
             )
             return
 
         confirmed = messagebox.askyesno(
-            "Install app",
-            f"{recommended_install_dir()} にアプリ本体をコピーします。\n"
-            "古いバージョンが動いている場合は停止してから上書きします。\n\n"
-            "続行しますか？",
+            self._text("gui.message.install.title"),
+            self._text("gui.message.install.confirm", path=recommended_install_dir()),
         )
         if not confirmed:
             return
@@ -264,8 +264,8 @@ class CodexHandoffDesktop(tk.Tk):
         self.refresh_state()
         self.show_screen("configure")
         messagebox.showinfo(
-            "Codex Handoff",
-            f"Installed to:\n{result.installed_exe}\n\n続けて Step 2 のセットアップを実行してください。",
+            self._text("gui.message.install.title"),
+            self._text("gui.message.install.success", path=result.installed_exe),
         )
 
     def run_guided_setup(self) -> None:
@@ -274,10 +274,8 @@ class CodexHandoffDesktop(tk.Tk):
 
         if install_auto:
             confirmed = messagebox.askyesno(
-                "Apply setup",
-                "automatic loading を有効にすると ~/.codex/AGENTS.md の codex-handoff 管理ブロックを追加または更新します。\n"
-                "既存ファイルがある場合はバックアップを作成します。\n\n"
-                "続行しますか？",
+                self._text("gui.button.apply"),
+                self._text("gui.message.setup.confirm"),
             )
             if not confirmed:
                 return
@@ -291,7 +289,7 @@ class CodexHandoffDesktop(tk.Tk):
             if install_background:
                 target_exe = self._background_target_exe()
                 if target_exe is None or not target_exe.exists():
-                    raise RuntimeError("background sync 用の実行ファイルが見つかりません。Step 1 の再インストールをやり直してください。")
+                    raise RuntimeError(self._text("gui.error.background_missing"))
                 stop_managed_processes(recommended_install_dir())
                 install_background_startup_shortcut(target_exe)
                 launch_background_sync(target_exe)
@@ -299,7 +297,7 @@ class CodexHandoffDesktop(tk.Tk):
                 remove_background_startup_shortcut()
                 stop_managed_processes(recommended_install_dir())
         except Exception as exc:
-            messagebox.showerror("Codex Handoff", str(exc))
+            messagebox.showerror(self._text("gui.message.setup.error"), str(exc))
             self.refresh_state()
             return
 
@@ -307,19 +305,24 @@ class CodexHandoffDesktop(tk.Tk):
         self.show_screen("finish")
 
         if install_auto:
-            auto_text = "automatic loading を有効化しました。" if changed else "automatic loading は既に最新でした。"
+            auto_text = self._text("gui.message.setup.auto_enabled") if changed else self._text("gui.message.setup.auto_current")
         else:
-            auto_text = "automatic loading を無効化しました。"
-        background_text = "background sync を起動しました。" if install_background else "background sync を停止しました。"
+            auto_text = self._text("gui.message.setup.auto_disabled")
+        background_text = self._text("gui.message.setup.background_started") if install_background else self._text("gui.message.setup.background_stopped")
 
         if backup_path is not None:
-            backup_text = f"\nBackup: {backup_path}"
+            backup_text = f"\n{self._text('gui.message.setup.backup')}: {backup_path}"
         else:
             backup_text = ""
 
         messagebox.showinfo(
-            "Codex Handoff",
-            f"セットアップが完了しました。\n\n{auto_text}\n{background_text}\nGlobal store: {global_paths.app_home}{backup_text}",
+            self._text("gui.message.setup.title"),
+            (
+                f"{self._text('gui.message.setup.done')}\n\n"
+                f"{auto_text}\n"
+                f"{background_text}\n"
+                f"{self._text('gui.message.setup.global_store')}: {global_paths.app_home}{backup_text}"
+            ),
         )
 
     def _background_target_exe(self) -> Path | None:
@@ -343,7 +346,9 @@ def build_setup_view_state(
     background_enabled: bool,
     desired_auto_loading: bool,
     desired_background_sync: bool,
+    language: str | None = None,
 ) -> SetupViewState:
+    lang = language or detect_language()
     automation_complete = (not desired_auto_loading or agents_enabled) and (
         not desired_background_sync or background_enabled
     )
@@ -356,18 +361,18 @@ def build_setup_view_state(
         screen = "finish"
 
     if installed:
-        install_status = "Status: installed in LocalAppData."
-        install_button_text = "Install or update app"
+        install_status = t("gui.install.status.installed", language=lang)
+        install_button_text = t("gui.button.install", language=lang)
     elif can_install:
-        install_status = "Status: not installed yet."
-        install_button_text = "Install or update app"
+        install_status = t("gui.install.status.not_installed", language=lang)
+        install_button_text = t("gui.button.install", language=lang)
     else:
-        install_status = "Status: development mode. LocalAppData install is optional."
-        install_button_text = "Install or update app"
+        install_status = t("gui.install.status.dev_mode", language=lang)
+        install_button_text = t("gui.button.install", language=lang)
 
     automation_parts = [
-        f"Automatic loading: {'enabled' if agents_enabled else 'not installed'}",
-        f"Background sync at sign-in: {'enabled' if background_enabled else 'not installed'}",
+        t("gui.automation.auto_loading.enabled" if agents_enabled else "gui.automation.auto_loading.not_installed", language=lang),
+        t("gui.automation.background_sync.enabled" if background_enabled else "gui.automation.background_sync.not_installed", language=lang),
     ]
     automation_status = "\n".join(automation_parts)
 
@@ -380,13 +385,14 @@ def build_setup_view_state(
     )
 
 
-def render_install_status(*, installed: bool) -> str:
+def render_install_status(*, installed: bool, language: str | None = None) -> str:
     recommended = recommended_install_dir() / "CodexHandoff.exe"
+    lang = language or detect_language()
     return "\n".join(
         [
-            f"Current status: {'Installed' if installed else 'Not installed'}",
-            f"Install location: {recommended}",
-            "Step 1 is always safe. Existing files are stopped and then overwritten.",
+            t("gui.install.status.installed" if installed else "gui.install.status.not_installed", language=lang),
+            f"{t('gui.install.location', language=lang)}: {recommended}",
+            t("gui.install.safe", language=lang),
         ]
     )
 
@@ -396,12 +402,14 @@ def render_automation_status(
     global_paths: GlobalPaths,
     agents_enabled: bool,
     background_enabled: bool,
+    language: str | None = None,
 ) -> str:
+    lang = language or detect_language()
     return "\n".join(
         [
-            f"Global store: {global_paths.app_home}",
-            f"Automatic loading: {'enabled' if agents_enabled else 'not installed'}",
-            f"Background sync at sign-in: {'enabled' if background_enabled else 'not installed'}",
+            f"{t('gui.automation.global_store', language=lang)}: {global_paths.app_home}",
+            t("gui.automation.auto_loading.enabled" if agents_enabled else "gui.automation.auto_loading.not_installed", language=lang),
+            t("gui.automation.background_sync.enabled" if background_enabled else "gui.automation.background_sync.not_installed", language=lang),
         ]
     )
 
@@ -412,14 +420,16 @@ def render_finish_summary(
     workspace_state: CodexWorkspaceState,
     agents_enabled: bool,
     background_enabled: bool,
+    language: str | None = None,
 ) -> str:
+    lang = language or detect_language()
     preferred = workspace_state.preferred_root()
-    workspace_text = str(preferred) if preferred is not None else "No active Codex workspace detected yet."
+    workspace_text = str(preferred) if preferred is not None else t("gui.finish.no_workspace", language=lang)
     return "\n".join(
         [
-            f"Global store: {global_paths.app_home}",
-            f"Current Codex workspace: {workspace_text}",
-            f"Automatic loading: {'enabled' if agents_enabled else 'not installed'}",
-            f"Background sync at sign-in: {'enabled' if background_enabled else 'not installed'}",
+            f"{t('gui.finish.global_store', language=lang)}: {global_paths.app_home}",
+            f"{t('gui.finish.workspace', language=lang)}: {workspace_text}",
+            t("gui.automation.auto_loading.enabled" if agents_enabled else "gui.automation.auto_loading.not_installed", language=lang),
+            t("gui.automation.background_sync.enabled" if background_enabled else "gui.automation.background_sync.not_installed", language=lang),
         ]
     )

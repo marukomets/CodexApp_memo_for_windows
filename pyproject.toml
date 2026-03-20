@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "codex-handoff"
-version = "0.6.9"
+version = "0.6.10"
 description = "Local handoff generator for Codex projects"
 readme = "README.md"
 requires-python = ">=3.12"

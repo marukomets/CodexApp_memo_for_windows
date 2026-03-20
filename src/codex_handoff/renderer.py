@@ -2,105 +2,112 @@ from __future__ import annotations
 
 from codex_handoff.files import markdown_body_or_fallback
 from codex_handoff.focus import select_user_facing_changed_files
+from codex_handoff.localization import detect_language, normalize_language, t
 from codex_handoff.memory import _looks_like_meta_memory_evaluation, grouped_semantic_entries, grouped_worklog_entries
 from codex_handoff.models import HandoffDocument, SessionRecord
 from codex_handoff.summaries import summarize_actionable_request
 
 
 class CodexMarkdownRenderer:
+    def __init__(self, language: str | None = None) -> None:
+        self.language = normalize_language(language) if language is not None else detect_language()
+
     def render(self, handoff: HandoffDocument) -> str:
         return self.render_next_thread(handoff)
+
+    def _text(self, key: str, **kwargs: object) -> str:
+        return t(key, language=self.language, **kwargs)
 
     def render_project(self, handoff: HandoffDocument) -> str:
         context = handoff.manual_context
         lines = [
-            "# Project Context",
+            f"# {self._text('renderer.project_context.title')}",
             "",
-            "- 自動更新: `codex-handoff prepare` / `capture` / background sync",
-            f"- 生成日時: `{handoff.generated_at}`",
-            f"- ルート: `{handoff.root_path}`",
+            self._text("renderer.auto_updated"),
+            self._text("renderer.generated_at", value=handoff.generated_at),
+            self._text("renderer.root", value=handoff.root_path),
             "",
-            "## 目的",
+            f"## {self._text('renderer.project_purpose.title').removeprefix('## ').strip()}",
             "",
             markdown_body_or_fallback(
                 context.purpose,
-                "- このプロジェクトの目的はまだ抽出できていません。",
+                self._text("renderer.no_purpose"),
             ),
             "",
-            "## 制約",
+            f"## {self._text('renderer.semantic.constraints')}",
             "",
             markdown_body_or_fallback(
                 context.constraints,
-                "- 制約はまだ抽出できていません。",
+                self._text("renderer.no_constraints"),
             ),
             "",
-            "## 重要ファイル",
+            f"## {self._text('renderer.important_files.title').removeprefix('## ').strip()}",
             "",
             markdown_body_or_fallback(
                 context.important_files,
-                "- 重要ファイルはまだ抽出できていません。",
+                self._text("renderer.important_files.no_items"),
             ),
             "",
-            "## 運用ルール",
+            f"## {self._text('renderer.assumptions.rules.title').removeprefix('### ').strip()}",
             "",
             markdown_body_or_fallback(
                 context.operating_rules,
-                "- 運用ルールはまだ抽出できていません。",
+                self._text("renderer.no_rules"),
             ),
             "",
-            "## 仮定",
+            f"## {self._text('renderer.assumptions.assumptions.title').removeprefix('### ').strip()}",
             "",
             markdown_body_or_fallback(
                 context.assumptions,
-                "- 仮定はまだ抽出できていません。",
+                self._text("renderer.no_assumptions"),
             ),
         ]
         return "\n".join(lines).strip() + "\n"
 
     def render_decisions(self, handoff: HandoffDocument) -> str:
         lines = [
-            "# Decisions",
+            f"# {self._text('renderer.decisions.title')}",
             "",
-            "- 自動更新: `codex-handoff prepare` / `capture` / background sync",
-            f"- 生成日時: `{handoff.generated_at}`",
+            self._text("renderer.auto_updated"),
+            self._text("renderer.generated_at", value=handoff.generated_at),
             "",
             markdown_body_or_fallback(
                 handoff.manual_context.decisions_markdown,
-                "- 決定事項はまだ抽出できていません。",
+                self._text("renderer.no_decisions"),
             ),
         ]
         return "\n".join(lines).strip() + "\n"
 
     def render_tasks(self, handoff: HandoffDocument) -> str:
         lines = [
-            "# Tasks",
+            f"# {self._text('renderer.tasks.title')}",
             "",
-            "- 自動更新: `codex-handoff prepare` / `capture` / background sync",
-            f"- 生成日時: `{handoff.generated_at}`",
+            self._text("renderer.auto_updated"),
+            self._text("renderer.generated_at", value=handoff.generated_at),
             "",
             markdown_body_or_fallback(
                 handoff.manual_context.tasks_markdown,
-                "- [ ] 次に進める作業はまだ抽出できていません。",
+                self._text("renderer.no_tasks"),
             ),
         ]
         return "\n".join(lines).strip() + "\n"
 
     def render_next_thread(self, handoff: HandoffDocument) -> str:
         lines: list[str] = [
-            f"# Next Thread Brief: {handoff.project_name}",
+            f"# {self._text('renderer.next_thread.title', project=handoff.project_name)}",
             "",
-            f"- 生成日時: `{handoff.generated_at}`",
-            f"- ルート: `{handoff.root_path}`",
-            f"- メモ保存先: `{handoff.handoff_dir}`",
+            self._text("renderer.generated_at", value=handoff.generated_at),
+            self._text("renderer.root", value=handoff.root_path),
+            self._text("renderer.memory_location", value=handoff.handoff_dir),
             "",
-            "## このプロジェクトの目的",
+            self._text("renderer.project_purpose.title"),
             "",
         ]
         lines.extend(self._purpose_section(handoff))
         lines.extend(
             [
                 "",
-                "## プロジェクト記憶",
+                self._text("renderer.project_memory.title"),
                 "",
             ]
         )
@@ -108,7 +115,7 @@ class CodexMarkdownRenderer:
         lines.extend(
             [
                 "",
-                "## 最近の作業記録",
+                self._text("renderer.recent_worklog.title"),
                 "",
             ]
         )
@@ -116,7 +123,7 @@ class CodexMarkdownRenderer:
         lines.extend(
             [
                 "",
-                "## 現在の主題",
+                self._text("renderer.current_focus.title"),
                 "",
             ]
         )
@@ -124,7 +131,7 @@ class CodexMarkdownRenderer:
         lines.extend(
             [
                 "",
-                "## 直近の会話要点",
+                self._text("renderer.recent_sessions.title"),
                 "",
             ]
         )
@@ -132,21 +139,21 @@ class CodexMarkdownRenderer:
         lines.extend(
             [
                 "",
-                "## 直近の決定事項",
+                self._text("renderer.recent_decisions.title"),
                 "",
                 markdown_body_or_fallback(
                     handoff.manual_context.decisions_markdown,
-                    "- 決定事項はまだ抽出できていません。",
+                    self._text("renderer.no_decisions"),
                 ),
                 "",
-                "## 未完了タスク",
+                self._text("renderer.open_tasks.title"),
                 "",
                 markdown_body_or_fallback(
                     handoff.manual_context.tasks_markdown,
-                    "- [ ] 次に進める作業はまだ抽出できていません。",
+                    self._text("renderer.no_tasks"),
                 ),
                 "",
-                "## 現在の作業状態",
+                self._text("renderer.current_state.title"),
                 "",
             ]
         )
@@ -154,7 +161,7 @@ class CodexMarkdownRenderer:
         lines.extend(
             [
                 "",
-                "## 新スレッドで最初にやるべき 3 手",
+                self._text("renderer.next_steps.title"),
                 "",
             ]
         )
@@ -162,7 +169,7 @@ class CodexMarkdownRenderer:
         lines.extend(
             [
                 "",
-                "## 明示すべき仮定",
+                self._text("renderer.assumptions.title"),
                 "",
             ]
         )
@@ -174,13 +181,13 @@ class CodexMarkdownRenderer:
         lines = [
             markdown_body_or_fallback(
                 context.purpose,
-                "- このプロジェクトの目的はまだ抽出できていません。",
+                self._text("renderer.no_purpose"),
             )
         ]
         if context.important_files.strip():
-            lines.extend(["", "### 重要ファイル", "", context.important_files.strip()])
+            lines.extend(["", self._text("renderer.important_files.title").replace("##", "###", 1), "", context.important_files.strip()])
         elif handoff.repo_snapshot.detected_important_paths:
-            lines.extend(["", "### 重要ファイル", ""])
+            lines.extend(["", self._text("renderer.important_files.title").replace("##", "###", 1), ""])
             lines.extend(f"- `{path}`" for path in handoff.repo_snapshot.detected_important_paths)
         return lines
 
@@ -190,12 +197,12 @@ class CodexMarkdownRenderer:
         seen_summaries: set[str] = set()
 
         sections = (
-            ("ユーザーの思想", "preference"),
-            ("期待仕様", "spec"),
-            ("制約", "constraint"),
-            ("うまくいったこと", "success"),
-            ("避けたいこと", "failure"),
-            ("採用した判断", "decision"),
+            (self._text("renderer.semantic.user_preferences"), "preference"),
+            (self._text("renderer.semantic.specs"), "spec"),
+            (self._text("renderer.semantic.constraints"), "constraint"),
+            (self._text("renderer.semantic.successes"), "success"),
+            (self._text("renderer.semantic.failures"), "failure"),
+            (self._text("renderer.semantic.decisions"), "decision"),
         )
         for title, kind in sections:
             entries = [
@@ -212,7 +219,7 @@ class CodexMarkdownRenderer:
             lines.append("")
 
         if not lines:
-            return ["- まだ抽出できたプロジェクト記憶はありません。"]
+            return [self._text("renderer.no_project_memory")]
 
         if lines[-1] == "":
             lines.pop()
@@ -221,10 +228,10 @@ class CodexMarkdownRenderer:
     def _worklog_section(self, handoff: HandoffDocument) -> list[str]:
         grouped = grouped_worklog_entries(handoff.memory_snapshot)
         sections = (
-            ("進捗", "progress"),
-            ("検証", "verification"),
-            ("直近コミット", "commit"),
-            ("変更ファイル", "change"),
+            (self._text("renderer.worklog.progress"), "progress"),
+            (self._text("renderer.worklog.verification"), "verification"),
+            (self._text("renderer.worklog.commit"), "commit"),
+            (self._text("renderer.worklog.change"), "change"),
         )
 
         lines: list[str] = []
@@ -237,7 +244,7 @@ class CodexMarkdownRenderer:
             lines.append("")
 
         if not lines:
-            return ["- まだ抽出できた作業記録はありません。"]
+            return [self._text("renderer.no_worklog")]
 
         if lines[-1] == "":
             lines.pop()
@@ -254,11 +261,11 @@ class CodexMarkdownRenderer:
             summary = _substantive_focus_for_record(recent_session)
             if summary:
                 return [f"- {summary}"]
-        return ["- 現在の主題はまだ抽出できていません。"]
+        return [self._text("renderer.no_current_focus")]
 
     def _recent_sessions_section(self, handoff: HandoffDocument) -> list[str]:
         if not handoff.recent_sessions:
-            return ["- このプロジェクトに紐づく Codex セッション履歴はまだ見つかっていません。"]
+            return [self._text("renderer.no_sessions")]
 
         lines: list[str] = []
         for record in handoff.recent_sessions:
@@ -270,15 +277,15 @@ class CodexMarkdownRenderer:
 
     def _render_session_record(self, record: SessionRecord, root_path: str) -> list[str]:
         label = record.session_id[:8]
-        lines = [f"### セッション `{label}`"]
+        lines = [self._text("renderer.session.title", label=label)]
 
         meta_parts: list[str] = []
         if record.started_at:
-            meta_parts.append(f"開始 `{record.started_at}`")
+            meta_parts.append(f"{self._text('renderer.session.started')} `{record.started_at}`")
         if record.updated_at and record.updated_at != record.started_at:
-            meta_parts.append(f"更新 `{record.updated_at}`")
+            meta_parts.append(f"{self._text('renderer.session.updated')} `{record.updated_at}`")
         if record.cwd and record.cwd != root_path:
-            meta_parts.append(f"cwd `{record.cwd}`")
+            meta_parts.append(f"{self._text('renderer.session.cwd')} `{record.cwd}`")
         if meta_parts:
             lines.append(f"- {' / '.join(meta_parts)}")
 
@@ -289,77 +296,85 @@ class CodexMarkdownRenderer:
             latest_reply = record.latest_assistant_message
 
         if first_request:
-            lines.append(f"- 最初の依頼: {first_request}")
+            lines.append(self._text("renderer.session.first_request", value=first_request))
         if latest_request and latest_request != first_request:
-            lines.append(f"- 直近の依頼: {latest_request}")
+            lines.append(self._text("renderer.session.latest_request", value=latest_request))
         if latest_reply:
-            lines.append(f"- 直近の回答: {latest_reply}")
+            lines.append(self._text("renderer.session.latest_reply", value=latest_reply))
         return lines
 
     def _current_state_section(self, handoff: HandoffDocument) -> list[str]:
         snapshot = handoff.repo_snapshot
         volatile_status = handoff.volatile_status
-        lines = [f"- プロジェクト名: `{handoff.project_name}`"]
+        lines = [self._text("renderer.state.project_name", value=handoff.project_name)]
         if volatile_status and volatile_status.refreshed_at:
-            lines.append(f"- 状態更新: `{volatile_status.refreshed_at}`")
+            lines.append(self._text("renderer.state.status_updated", value=volatile_status.refreshed_at))
         if handoff.recent_sessions:
-            lines.append(f"- 直近に検出した Codex セッション: {len(handoff.recent_sessions)} 件")
+            lines.append(self._text("renderer.state.detected_sessions", count=len(handoff.recent_sessions)))
 
         if not snapshot.git_available:
-            lines.append("- Git: 利用できません。非 Git ディレクトリとして handoff を生成しています。")
+            lines.append(self._text("renderer.state.git_unavailable"))
             if snapshot.detected_important_paths:
-                lines.append("- 検出した重要パス:")
+                lines.append(self._text("renderer.state.detected_paths.title"))
                 lines.extend(f"  - `{path}`" for path in snapshot.detected_important_paths)
             return lines
 
         if not snapshot.is_repo:
-            lines.append("- Git: 利用可能ですが、このディレクトリは Git リポジトリではありません。")
+            lines.append(self._text("renderer.state.git_not_repo"))
             if snapshot.detected_important_paths:
-                lines.append("- 検出した重要パス:")
+                lines.append(self._text("renderer.state.detected_paths.title"))
                 lines.extend(f"  - `{path}`" for path in snapshot.detected_important_paths)
             return lines
 
-        lines.append(f"- Git ルート: `{snapshot.git_root or handoff.root_path}`")
-        lines.append(f"- ブランチ: `{snapshot.branch or '(detached)'}`")
-        lines.append(f"- 作業ツリー: `{'dirty' if snapshot.is_dirty else 'clean'}`")
+        lines.append(self._text("renderer.state.git_root", value=snapshot.git_root or handoff.root_path))
+        lines.append(self._text("renderer.state.branch", value=snapshot.branch or "(detached)"))
+        lines.append(self._text("renderer.state.worktree", value="dirty" if snapshot.is_dirty else "clean"))
         if volatile_status and volatile_status.tracking_branch:
-            lines.append(f"- 追跡ブランチ: `{volatile_status.tracking_branch}`")
+            lines.append(self._text("renderer.state.tracking_branch", value=volatile_status.tracking_branch))
             if volatile_status.ahead_count or volatile_status.behind_count:
-                lines.append(
-                    f"- 同期状況: `ahead {volatile_status.ahead_count} / behind {volatile_status.behind_count}`"
-                )
+                lines.append(self._text(
+                    "renderer.state.sync_status",
+                    value=f"ahead {volatile_status.ahead_count} / behind {volatile_status.behind_count}",
+                ))
             else:
-                lines.append("- 同期状況: `up-to-date`")
+                lines.append(self._text("renderer.state.sync_status", value="up-to-date"))
         if volatile_status and volatile_status.latest_upstream_commit:
-            lines.append(f"- 最新 push 済みコミット: `{volatile_status.latest_upstream_commit}`")
+            lines.append(self._text("renderer.state.latest_push", value=volatile_status.latest_upstream_commit))
         if volatile_status and volatile_status.latest_tag:
-            lines.append(f"- 最新ローカルタグ: `{volatile_status.latest_tag}`")
+            lines.append(self._text("renderer.state.latest_local_tag", value=volatile_status.latest_tag))
         if volatile_status and volatile_status.remote_repository:
-            lines.append(f"- リモート: `{volatile_status.remote_repository}`")
+            lines.append(self._text("renderer.state.remote", value=volatile_status.remote_repository))
         if volatile_status and volatile_status.latest_release:
             lines.append(
-                f"- 最新 Release: {_render_markdown_link(volatile_status.latest_release.tag, volatile_status.latest_release.url)}"
+                self._text(
+                    "renderer.state.latest_release",
+                    value=_render_markdown_link(volatile_status.latest_release.tag, volatile_status.latest_release.url),
+                )
             )
         if volatile_status and volatile_status.latest_workflow:
             workflow_state = f"`{volatile_status.latest_workflow.status}`"
             if volatile_status.latest_workflow.conclusion:
                 workflow_state = f"{workflow_state} / `{volatile_status.latest_workflow.conclusion}`"
             lines.append(
-                f"- 最新 workflow: {_render_markdown_link(volatile_status.latest_workflow.name, volatile_status.latest_workflow.url)} ({workflow_state})"
+                self._text(
+                    "renderer.state.latest_workflow",
+                    value=_render_markdown_link(volatile_status.latest_workflow.name, volatile_status.latest_workflow.url),
+                    status=workflow_state,
+                )
             )
 
         if snapshot.changed_files:
-            lines.extend(["", "### 変更ファイル", ""])
+            lines.extend(["", self._text("renderer.state.changed_files.title"), ""])
             lines.extend(f"- `{item.path}` ({item.status})" for item in snapshot.changed_files)
         else:
-            lines.extend(["", "- 変更ファイルはありません。"])
+            lines.extend(["", self._text("renderer.state.no_changes")])
 
         if snapshot.recent_commits:
-            lines.extend(["", "### 直近コミット", ""])
+            lines.extend(["", self._text("renderer.state.recent_commits.title"), ""])
             lines.extend(f"- `{item.short_hash}` {item.summary}" for item in snapshot.recent_commits)
 
         if snapshot.detected_important_paths:
-            lines.extend(["", "### 検出した重要パス", ""])
+            lines.extend(["", self._text("renderer.state.detected_paths.title"), ""])
             lines.extend(f"- `{path}`" for path in snapshot.detected_important_paths)
         return lines
 
@@ -375,63 +390,63 @@ class CodexMarkdownRenderer:
             return steps
 
         if tasks:
-            steps.append(f"1. `tasks.md` の先頭タスクを確認する: {tasks[0]}")
+            steps.append(self._text("renderer.initial.first_tasks", value=tasks[0]))
         elif recent_session and _substantive_focus_for_record(recent_session):
             summary = _substantive_focus_for_record(recent_session)
-            steps.append(f"1. 直近の依頼を起点に再開する: {summary}")
+            steps.append(self._text("renderer.initial.resume", value=summary))
         else:
-            steps.append("1. `tasks.md` を確認して次の作業を 1 つ決める。")
+            steps.append(self._text("renderer.initial.pick_task"))
 
         focus_changed_files = select_user_facing_changed_files(snapshot.changed_files, limit=3)
         if snapshot.is_repo and focus_changed_files:
             focus_files = ", ".join(f"`{item.path}`" for item in focus_changed_files)
             suffix = " など" if len(focus_changed_files) < len(snapshot.changed_files) else ""
-            steps.append(f"2. 変更ファイルを確認して現在地を把握する: {focus_files}{suffix}")
+            steps.append(self._text("renderer.initial.inspect_changes", value=focus_files, suffix=suffix))
         elif snapshot.is_repo and snapshot.recent_commits:
             latest = snapshot.recent_commits[0]
-            steps.append(f"2. 直近コミット `{latest.short_hash}` の意図を確認する。")
+            steps.append(self._text("renderer.initial.inspect_commit", value=latest.short_hash))
         elif handoff.manual_context.important_files.strip():
             focus_paths = ", ".join(
                 f"`{item}`"
                 for item in _extract_bulleted_items(handoff.manual_context.important_files)[:3]
             )
-            steps.append(f"2. 重要ファイルを開いて文脈を取り戻す: {focus_paths}")
+            steps.append(self._text("renderer.initial.open_important_files", value=focus_paths))
         elif snapshot.detected_important_paths:
             focus_paths = ", ".join(f"`{path}`" for path in snapshot.detected_important_paths[:3])
-            steps.append(f"2. 重要パスを開いて文脈を取り戻す: {focus_paths}")
+            steps.append(self._text("renderer.initial.open_important_paths", value=focus_paths))
         else:
-            steps.append("2. `project.md` と `decisions.md` を見て、前提と判断を確認する。")
+            steps.append(self._text("renderer.initial.check_context"))
 
         if recent_session and (recent_session.latest_assistant_summary or recent_session.latest_assistant_message):
             summary = _truncate_step_text(
                 recent_session.latest_assistant_summary or recent_session.latest_assistant_message,
                 120,
             )
-            steps.append(f"3. 直近の回答内容を踏まえて次の判断を置く: {summary}")
+            steps.append(self._text("renderer.initial.think_next", value=summary))
         else:
-            steps.append("3. 制約・運用ルール・AGENTS.md を確認してから作業を進める。")
+            steps.append(self._text("renderer.initial.check_rules"))
         return steps
 
     def _assumptions_section(self, handoff: HandoffDocument) -> list[str]:
         context = handoff.manual_context
         lines: list[str] = []
         if context.constraints.strip():
-            lines.extend(["### 制約", "", context.constraints.strip(), ""])
+            lines.extend([self._text("renderer.assumptions.constraints.title"), "", context.constraints.strip(), ""])
         else:
-            lines.extend(["### 制約", "", "- 制約はまだ抽出できていません。", ""])
+            lines.extend([self._text("renderer.assumptions.constraints.title"), "", self._text("renderer.no_constraints"), ""])
 
         if context.operating_rules.strip():
-            lines.extend(["### 運用ルール", "", context.operating_rules.strip(), ""])
+            lines.extend([self._text("renderer.assumptions.rules.title"), "", context.operating_rules.strip(), ""])
         else:
-            lines.extend(["### 運用ルール", "", "- 運用ルールはまだ抽出できていません。", ""])
+            lines.extend([self._text("renderer.assumptions.rules.title"), "", self._text("renderer.no_rules"), ""])
 
         if context.assumptions.strip():
-            lines.extend(["### 仮定", "", context.assumptions.strip(), ""])
+            lines.extend([self._text("renderer.assumptions.assumptions.title"), "", context.assumptions.strip(), ""])
         else:
-            lines.extend(["### 仮定", "", "- 仮定はまだ抽出できていません。", ""])
+            lines.extend([self._text("renderer.assumptions.assumptions.title"), "", self._text("renderer.no_assumptions"), ""])
 
         if context.agents_markdown.strip():
-            lines.extend(["### AGENTS.md", "", context.agents_markdown.strip(), ""])
+            lines.extend([self._text("renderer.assumptions.agents.title"), "", context.agents_markdown.strip(), ""])
 
         if lines[-1] == "":
             lines.pop()
