@@ -1,45 +1,44 @@
 # codex-handoff
 
-`codex-handoff` は、Codex で新しいスレッドを始める前に、同一プロジェクトの前提・決定事項・未完了タスク・現在の作業状態を自動で整理するローカル CLI です。
+`codex-handoff` is a local CLI that prepares the next Codex thread before you switch context. It collects project context, decisions, tasks, live Git status, and recent session history into a handoff that is easy to reuse in the next thread.
 
-正本のメモは `~/.codex-handoff/projects/<project-id>/` に保存しつつ、各リポジトリの `.codex-handoff/` に読みやすい同期ミラーを置きます。Codex 側の読み込み導線は `~/.codex/AGENTS.md` へ 1 回だけ入れます。
+The source of truth lives in `~/.codex-handoff/projects/<project-id>/`. Each repository gets a readable sync mirror in `.codex-handoff/`, and Codex integration is added once through `~/.codex/AGENTS.md`.
 
-英語の案内は [README.en.md](README.en.md) にあります。GUI と生成される handoff の言語は `CODEX_HANDOFF_LANG` で `ja` / `en` / `auto` を切り替えられます。
+The GUI and generated handoff docs follow `CODEX_HANDOFF_LANG` (`ja`, `en`, or `auto`). The detailed Japanese reference continues below.
 
-v2.1 では shell を使いたくない人向けに `codex-handoff-ui` を追加しました。配布時はこの GUI を単体 `exe` にして配り、初回起動時に `%LOCALAPPDATA%\CodexHandoff` へ自己インストールできます。
+v2.1 added `codex-handoff-ui` for people who do not want to use a shell. The GUI ships as a standalone `exe` and can self-install into `%LOCALAPPDATA%\CodexHandoff` on first launch.
 
-v2.2 では background sync を追加し、初回セットアップ後は GUI を開かなくても active workspace の handoff を裏で更新できるようにしました。
-新しく作ったプロジェクトでも、Codex でそのフォルダを active workspace にした時点で project store を自動作成して追従します。
+v2.2 added background sync so the active workspace handoff stays up to date even when the GUI is closed.
 
-v0.6 では `memory.json` を構造化メモリの正本として追加し、ユーザーの思想・仕様・制約・採用判断に加えて、進捗・検証・コミット・変更ファイル、現在の主題、注目パス、次アクションを分けて保持するようにしました。あわせて、薄いユーザー共通設定は `~/.codex-handoff/user-memory.json` に分離して保持します。
+v0.6 added `memory.json` as the structured memory source of truth, separating user preferences, specs, constraints, and decisions from progress, verification, commits, changed files, current focus, important paths, and next actions. Thin user-wide settings live in `~/.codex-handoff/user-memory.json`.
 
-## 対象環境
+## Supported environment
 
 - Windows 11
 - CodexWindowsApp
 - PowerShell
-- `uv` が使える Python 環境、または GitHub Releases から取得した Windows 用 `setup.exe`
+- A Python environment with `uv`, or the Windows `setup.exe` from GitHub Releases
 
-## 目的
+## Purpose
 
-- プロジェクト内でスレッドを切り替えるたびに前提を手で書き直す負担を減らす
-- コンテキスト圧縮で性能が落ちる前に、新しいスレッドへ安全に移る
-- Codex 本体の内部 DB や未公開 UI フックに依存せず、壊れにくい運用を作る
-- GitHub から導入したら、各プロジェクトで追加設定しなくても使える形にする
+- Reduce the need to rewrite project context every time you switch threads
+- Move to a new thread safely before context compression hurts quality
+- Avoid dependence on hidden Codex UI hooks or internal databases
+- Work from a GitHub install without per-project manual setup
 
-## 最初に選ぶ導線
+## Choose a path
 
-### CLI で使う人
+### CLI
 
-- `uv tool install codex-handoff` で CLI を入れる
-- `codex-handoff setup --install-global-agents` を 1 回だけ実行する
-- 以後は各プロジェクトで `codex-handoff prepare --stdout` を呼ぶ
+- Install the CLI with `uv tool install codex-handoff`
+- Run `codex-handoff setup --install-global-agents` once
+- Then call `codex-handoff prepare --stdout` in each project
 
-### GUI / installer で使う人
+### GUI / installer
 
-- GitHub Releases から `CodexHandoffSetup.exe` または版付き `CodexHandoffSetup-<version>.exe` を取得する
-- `setup.exe` を起動して `%LOCALAPPDATA%\CodexHandoff` へ自己インストールする
-- Step 2 の `Apply setup` で global setup と background sync を有効化する
+- Download `CodexHandoffSetup.exe` or `CodexHandoffSetup-<version>.exe` from GitHub Releases
+- Run `setup.exe` to self-install into `%LOCALAPPDATA%\CodexHandoff`
+- Use Step 2 and `Apply setup` to enable global setup and background sync
 
 ## インストール
 
