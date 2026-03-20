@@ -1,32 +1,32 @@
 PROJECT_TEMPLATE = """# Project Context
 
-## 目的
-- このプロジェクトで達成したいことを書く
+## Purpose
+- Write what this project is trying to accomplish.
 
-## 制約
-- 守るべき前提や制約を書く
+## Constraints
+- Write the assumptions and constraints that must be respected.
 
-## 重要ファイル
-- 重要なパスやモジュールを書く
+## Important files
+- Write the key paths and modules here.
 
-## 運用ルール
-- スレッドをまたいでも守りたいルールを書く
+## Operating rules
+- Write the rules that should hold across threads.
 
-## 仮定
-- 合理的に置いてよい仮定を書く
+## Assumptions
+- Write any reasonable assumptions here.
 """
 
 DECISIONS_TEMPLATE = """# Decisions
 
-- YYYY-MM-DD: 採用した判断を書く
+- YYYY-MM-DD: Write an adopted decision here.
 """
 
 TASKS_TEMPLATE = """# Tasks
 
-- [ ] 次に進める作業を書く
+- [ ] Write the next actionable task here.
 """
 
 NEXT_THREAD_TEMPLATE = """# Next Thread Brief
 
-`codex-handoff prepare` を実行すると、このファイルが最新の引き継ぎ内容で更新されます。
+`codex-handoff prepare` updates this file with the latest handoff summary.
 """

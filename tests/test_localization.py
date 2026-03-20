@@ -18,6 +18,12 @@ def test_detect_language_prefers_environment_override(monkeypatch) -> None:
     assert detect_language() == "en"
 
 
+def test_detect_language_defaults_to_english_when_unset(monkeypatch) -> None:
+    monkeypatch.delenv("CODEX_HANDOFF_LANG", raising=False)
+
+    assert detect_language() == "en"
+
+
 def test_detect_system_language_stays_japanese_when_locale_is_ja(monkeypatch) -> None:
     monkeypatch.delenv("CODEX_HANDOFF_LANG", raising=False)
     monkeypatch.setattr("codex_handoff.localization.locale.getlocale", lambda: ("ja_JP", "utf-8"))
@@ -66,13 +72,12 @@ def test_finish_summary_uses_english_fallback(tmp_path: Path) -> None:
     assert "No active Codex workspace detected yet." in summary
 
 
-def test_readme_source_prefers_english_readme_when_language_is_en(tmp_path: Path, monkeypatch) -> None:
+def test_readme_source_prefers_readme_md_as_canonical_source(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
-    (root / "README.md").write_text("# Japanese\n\nJapanese intro\n", encoding="utf-8")
-    (root / "README.en.md").write_text("# English\n\nEnglish intro\n", encoding="utf-8")
+    (root / "README.md").write_text("# English\n\nEnglish intro\n", encoding="utf-8")
+    (root / "README.en.md").write_text("# English alt\n\nAlternate intro\n", encoding="utf-8")
 
-    monkeypatch.setenv("CODEX_HANDOFF_LANG", "en")
     paths = ProjectPaths(
         global_paths=GlobalPaths(
             app_home=tmp_path / "global",
@@ -98,4 +103,4 @@ def test_readme_source_prefers_english_readme_when_language_is_en(tmp_path: Path
     context = ReadmeSource(paths).collect()
 
     assert context.path is not None
-    assert context.path.endswith("README.en.md")
+    assert context.path.endswith("README.md")

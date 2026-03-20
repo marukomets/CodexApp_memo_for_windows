@@ -1,10 +1,10 @@
 # codex-handoff
 
-`codex-handoff` is a local CLI that prepares the next Codex thread before you switch context. It collects project context, decisions, tasks, live Git status, and recent session history into a handoff that is easy to reuse in the next thread.
+`codex-handoff` is a local CLI that prepares the next Codex thread before you switch context. It collects the current project context, decisions, tasks, live Git status, and recent session history into a handoff that is easy to reuse in the next thread.
 
 The source of truth lives in `~/.codex-handoff/projects/<project-id>/`. Each repository gets a readable sync mirror in `.codex-handoff/`, and Codex integration is added once through `~/.codex/AGENTS.md`.
 
-The GUI and generated handoff docs follow `CODEX_HANDOFF_LANG` (`ja`, `en`, or `auto`). The detailed Japanese reference continues below.
+English is the default. Set `CODEX_HANDOFF_LANG=ja` for Japanese or `CODEX_HANDOFF_LANG=auto` to follow the system locale.
 
 v2.1 added `codex-handoff-ui` for people who do not want to use a shell. The GUI ships as a standalone `exe` and can self-install into `%LOCALAPPDATA%\CodexHandoff` on first launch.
 
@@ -26,6 +26,13 @@ v0.6 added `memory.json` as the structured memory source of truth, separating us
 - Avoid dependence on hidden Codex UI hooks or internal databases
 - Work from a GitHub install without per-project manual setup
 
+## Language
+
+- English is the default
+- Set `CODEX_HANDOFF_LANG=en` to force English
+- Set `CODEX_HANDOFF_LANG=ja` to force Japanese
+- Set `CODEX_HANDOFF_LANG=auto` to follow the system locale
+
 ## Choose a path
 
 ### CLI
@@ -40,7 +47,7 @@ v0.6 added `memory.json` as the structured memory source of truth, separating us
 - Run `setup.exe` to self-install into `%LOCALAPPDATA%\CodexHandoff`
 - Use Step 2 and `Apply setup` to enable global setup and background sync
 
-## インストール
+## Install
 
 ```powershell
 $env:UV_CACHE_DIR = Join-Path $env:USERPROFILE '.uv-cache'
@@ -49,14 +56,14 @@ uv tool install codex-handoff
 codex-handoff setup
 ```
 
-自動で次スレッドに引き継がせたいなら、インストール直後の最短導線は次です。
+If you want the next thread to be ready immediately:
 
 ```powershell
 codex-handoff setup --install-global-agents
 codex-handoff prepare --stdout
 ```
 
-開発中のローカル clone から試す場合:
+To try a local checkout during development:
 
 ```powershell
 $env:UV_CACHE_DIR = Join-Path $env:USERPROFILE '.uv-cache'
@@ -65,7 +72,7 @@ uv tool install .
 codex-handoff setup
 ```
 
-このリポジトリ自身を開発している間は、installed CLI より checkout 中の source を優先してください。
+While developing this repository itself, prefer the source in the checkout over an installed CLI:
 
 ```powershell
 $env:UV_CACHE_DIR = Join-Path $env:USERPROFILE '.uv-cache'
@@ -73,9 +80,9 @@ $env:UV_PYTHON_INSTALL_DIR = Join-Path $env:USERPROFILE '.uv-python'
 uv run codex-handoff prepare --stdout
 ```
 
-## 導入確認
+## Verify installation
 
-インストール直後は、次の 3 点ができれば成功です。
+After installation, these three checks should work:
 
 ```powershell
 codex-handoff where
@@ -83,27 +90,27 @@ codex-handoff doctor
 codex-handoff prepare --stdout
 ```
 
-- `where` で `~/.codex-handoff/projects/<project-id>/` と `.codex-handoff/` の両方が表示される
-- `doctor` で global setup と project store の問題が出ない
-- `prepare --stdout` で `.codex-handoff/next-thread.md` 相当の本文が出る
+- `where` shows both `~/.codex-handoff/projects/<project-id>/` and `.codex-handoff/`
+- `doctor` reports no problems with global setup or the project store
+- `prepare --stdout` prints the body that belongs in `.codex-handoff/next-thread.md`
 
-## 使い方
+## Usage
 
-通常運用では、最初に `setup` を 1 回実行すれば十分です。これは global store と `AGENTS` 用スニペットを作るだけで、`~/.codex/AGENTS.md` は勝手に書き換えません。
+In normal use, running `setup` once is enough. It creates the global store and the AGENTS snippet, but it does not modify `~/.codex/AGENTS.md` unless you ask it to.
 
 ```powershell
 codex-handoff setup
 codex-handoff setup --install-global-agents
 codex-handoff uninstall-global-agents
 codex-handoff prepare --stdout
-codex-handoff capture --note "API エラー調査の続き"
+codex-handoff capture --note "Continue investigating the API error"
 codex-handoff where
 codex-handoff doctor
 ```
 
-### GUI で使う
+### GUI
 
-開発環境から GUI を起動する場合:
+To launch the GUI from a development checkout:
 
 ```powershell
 $env:UV_CACHE_DIR = Join-Path $env:USERPROFILE '.uv-cache'
@@ -111,114 +118,136 @@ $env:UV_PYTHON_INSTALL_DIR = Join-Path $env:USERPROFILE '.uv-python'
 uv run codex-handoff-ui
 ```
 
-GUI は初回セットアップ専用の 2 ステップウィザードです。
+The GUI is a two-step setup wizard:
 
-- Step 1: 配布 exe 自身を `%LOCALAPPDATA%\CodexHandoff` へインストール
-- Step 2: チェックボックスの状態を `Apply setup` で反映
-- Done: 以後は GUI を開かなくても active workspace の handoff を自動更新
-- 必要ならその場で current workspace の handoff をコピー
+- Step 1: install the standalone executable into `%LOCALAPPDATA%\CodexHandoff`
+- Step 2: apply the selected automation settings
+- Done: the active workspace handoff keeps updating in the background
+- You can also copy the current workspace handoff from the GUI
 
 ### `setup`
 
-マシンごとの初回セットアップです。
+This is the machine-level first-time setup.
 
-- `~/.codex-handoff/` を作成
-- `~/.codex-handoff/global-agents-snippet.md` を作成
-- `~/.codex-handoff/user-memory.json` を作成
+- Creates `~/.codex-handoff/`
+- Creates `~/.codex-handoff/global-agents-snippet.md`
+- Creates `~/.codex-handoff/user-memory.json`
 
-デフォルトでは `~/.codex/AGENTS.md` を変更しません。
+By default it does not touch `~/.codex/AGENTS.md`.
 
-完全自動に寄せたい場合だけ、明示的に次を実行します。
+If you want automatic loading, run:
 
 ```powershell
 codex-handoff setup --install-global-agents
 ```
 
-この場合も、既存の `~/.codex/AGENTS.md` があればバックアップを作ってから、`codex-handoff` の管理ブロックだけを追加または更新します。ファイル全体を置き換えることはしません。
-
-これにより、新しい Codex スレッドでも `codex-handoff prepare --stdout` を試しやすくなります。
+When that option is enabled, `codex-handoff` backs up any existing `~/.codex/AGENTS.md` file and only adds or updates the managed block. It never replaces the whole file.
 
 ### `uninstall-global-agents`
 
-`~/.codex/AGENTS.md` に入れた `codex-handoff` の管理ブロックだけを削除します。ここでもバックアップを作成します。ほかの既存ルールは残します。
+Removes only the managed `codex-handoff` block from `~/.codex/AGENTS.md`. It also creates a backup and preserves any other existing rules.
 
 ### `prepare`
 
-カレントディレクトリからプロジェクトを自動判定し、対応する global store を自動で作成または再利用して、`project.md`、`decisions.md`、`tasks.md`、`memory.json`、`next-thread.md` をまとめて更新します。同時にリポジトリ内 `.codex-handoff/` の同期ミラーも更新します。`--stdout` を付けると、そのまま新スレッドへ貼れる本文を出力します。
+Automatically detects the current project, reuses or creates the matching global project store, and regenerates:
+
+- `project.md`
+- `decisions.md`
+- `tasks.md`
+- `memory.json`
+- `next-thread.md`
+
+It also updates the repository-local `.codex-handoff/` mirror. Use `--stdout` to print the body that can be pasted directly into a new thread.
 
 ### `capture`
 
-現在の Git 状態を `state.json` に保存し、`project.md`、`decisions.md`、`tasks.md`、`memory.json`、`next-thread.md` を再生成します。`--note` を付けると、その内容を優先度の高いタスクとして自動生成結果へ反映します。更新後はリポジトリ内 `.codex-handoff/` にも同期します。
+Stores the current Git state in `state.json` and regenerates `project.md`, `decisions.md`, `tasks.md`, `memory.json`, and `next-thread.md`. Use `--note` to turn the note into a high-priority task in the regenerated output.
 
 ### `where`
 
-現在のプロジェクトに対応する global store と、リポジトリ内の local mirror の場所を表示します。
+Shows the global store for the current project and the local mirror path in the repository.
 
 ### `doctor`
 
-global setup、現在の project store、global store 側の UTF-8 BOM なし、Git 利用可否を確認します。
+Checks the global setup, the current project store, UTF-8 handling for the global store, and Git availability.
 
 ### `init`
 
-互換コマンドです。現在のプロジェクト store を先に作りたい場合だけ使います。通常は `prepare` や `capture` が自動作成するため不要です。
+Compatibility command. Use it only if you want to create the project store before running anything else. In normal use, `prepare` and `capture` create the store automatically.
 
-## 動作の流れ
+## Flow
 
-新しいスレッドを始める時は、だいたい次の順で動きます。
+When you start a new thread, the system usually works like this:
 
-1. `setup` が global store と AGENTS 用の設定を用意する
-2. `prepare` が現在の workspace から `project-id` を決める
-3. 既存の project store があれば再利用し、なければ新規作成する
-4. `memory.json` を含む handoff 一式を更新する
-5. リポジトリ内 `.codex-handoff/` に読みやすい同期ミラーを書き出す
-6. 新スレッドでは `AGENTS.md` 経由で `prepare --stdout` を試し、その出力を前提に再開する
+1. `setup` prepares the global store and the AGENTS snippet.
+2. `prepare` resolves the current workspace into a `project-id`.
+3. Any existing project store is reused.
+4. If none exists, a new project store is created.
+5. The handoff files are regenerated.
+6. The repository-local `.codex-handoff/` mirror is written.
+7. The next thread can start from `prepare --stdout`.
 
-## 保存先
+## Storage
 
-- global 設定と全プロジェクトのメモ: `~/.codex-handoff/`
-- Codex への自動読込ルール: `~/.codex/AGENTS.md`
-- プロジェクトごとの正本: `~/.codex-handoff/projects/<project-id>/`
-- リポジトリ内の同期ミラー: `.codex-handoff/`
-- 保存される主なファイル:
-  - `project.md`
-  - `decisions.md`
-  - `tasks.md`
-  - `memory.json`
-  - `state.json`
-  - `next-thread.md`
+- Global settings and all-project memory: `~/.codex-handoff/`
+- Codex auto-load rules: `~/.codex/AGENTS.md`
+- Project-specific source of truth: `~/.codex-handoff/projects/<project-id>/`
+- Repository-local sync mirror: `.codex-handoff/`
 
-`project.md`、`decisions.md`、`tasks.md`、`memory.json`、`next-thread.md` はすべて自動生成対象です。README、AGENTS、Git 状態、Codex の最近のメインセッションをもとに再構成します。`memory.json` は構造化メモリの正本で、`semantic_entries`、`worklog_entries`、`current_focus`、`focus_paths`、`next_actions` を持ちます。`state.json` は live status の置き場で、`captured_at`、Git の現在地、追跡ブランチとの差分、必要に応じて GitHub Release / workflow の最新状態を毎回再取得して持ちます。`~/.codex-handoff/user-memory.json` には、返答言語や危険操作前の確認方針のような薄いユーザー共通設定だけを保持します。
+Main generated files:
 
-## 保存するもの / しないもの
+- `project.md`
+- `decisions.md`
+- `tasks.md`
+- `memory.json`
+- `state.json`
+- `next-thread.md`
 
-| 種類 | 例 | 保存先 |
+`project.md`, `decisions.md`, `tasks.md`, `memory.json`, and `next-thread.md` are all generated from README, AGENTS, Git state, and recent Codex sessions.
+
+`memory.json` is the structured memory source of truth. It stores:
+
+- semantic memory entries
+- worklog entries
+- current focus
+- focus paths
+- next actions
+
+`state.json` stores live status such as:
+
+- current Git branch
+- ahead / behind counts
+- latest pushed commit
+- latest local tag
+- GitHub release metadata
+- GitHub workflow metadata
+
+The thin user-global memory file at `~/.codex-handoff/user-memory.json` stores only stable cross-project preferences such as language, environment assumptions, and safety rules.
+
+## What is stored where
+
+| Type | Example | Location |
 | --- | --- | --- |
-| project memory | 仕様、決定事項、`focus_paths`、`next_actions`、最近の進捗 | `~/.codex-handoff/projects/<project-id>/memory.json` |
-| user-global memory | 回答言語、危険操作前の確認、恒常的な環境前提 | `~/.codex-handoff/user-memory.json` |
-| 同期ミラー | `project.md`、`decisions.md`、`tasks.md`、`next-thread.md` | リポジトリ内 `.codex-handoff/` |
-| 保存しないもの | 差分本文、環境変数値、機密、長い推論本文 | 保存しない |
+| project memory | specs, decisions, focus paths, next actions, recent progress | `~/.codex-handoff/projects/<project-id>/memory.json` |
+| user-global memory | response language, confirmation before risky operations, persistent environment assumptions | `~/.codex-handoff/user-memory.json` |
+| sync mirror | `project.md`, `decisions.md`, `tasks.md`, `next-thread.md` | repository-local `.codex-handoff/` |
+| not stored | diff bodies, environment variables, secrets, long chain-of-thought text | not stored |
 
-## 設計方針
+## Design principles
 
-- global store の生成物は UTF-8 BOM なし
-- global store を正本にし、リポジトリ内 `.codex-handoff/` は同期ミラーとして扱う
-- 差分本文や環境変数値などの機密は収集しない
-- Git がないディレクトリでも、パス単位の project store として動作する
-- 既存のローカル `.codex-handoff/` が見つかった場合は global store へ取り込みつつ、その後は同期ミラーとして再利用する
+- Global store artifacts are written without a UTF-8 BOM
+- The global store is the source of truth, and the repository-local `.codex-handoff/` directory is only a sync mirror
+- Secrets such as diff bodies and environment variable values are not collected
+- Git-less directories still work as path-based project stores
+- If a local `.codex-handoff/` already exists, it is imported into the global store and then reused as the sync mirror
 
-### Windows PowerShell 互換
+### Windows PowerShell compatibility
 
-global store は UTF-8 BOM なしで保持します。リポジトリ内 `.codex-handoff/` の同期ミラーは Windows PowerShell 5.1 の `Get-Content` でもそのまま読めるように UTF-8 BOM 付きで書き出します。
+The global store is written without a UTF-8 BOM. The repository-local `.codex-handoff/` mirror is written with a UTF-8 BOM so Windows PowerShell 5.1 can read it with `Get-Content` without extra flags.
 
-## 現実的な制約
+## Windows distribution
 
-- Codex デスクトップアプリへ独自 UI を埋め込む公開 API は前提にしていません
-- 新規スレッド開始時の完全なネイティブ hook はない前提です
-- そのため、v2 は self-contained な CLI を基本にし、必要な人だけ global `AGENTS.md` 連携を opt-in で有効化する設計です
-
-## Windows 配布
-
-エンドユーザー向けには GUI を単体 `exe` にして配る前提です。この `exe` は初回起動時に `%LOCALAPPDATA%\CodexHandoff` へ自己インストールでき、開き直しなしでそのまま Step 2 に進めます。
+The end-user package ships as a standalone GUI executable. On first launch it installs itself into `%LOCALAPPDATA%\CodexHandoff`, so you can keep using it without reopening the installer.
 
 ```powershell
 $env:UV_CACHE_DIR = Join-Path $env:USERPROFILE '.uv-cache'
@@ -226,45 +255,45 @@ $env:UV_PYTHON_INSTALL_DIR = Join-Path $env:USERPROFILE '.uv-python'
 powershell -ExecutionPolicy Bypass -File .\scripts\build_windows_gui.ps1
 ```
 
-生成物は常に次の 2 つです。
+Build outputs:
 
 - `dist\CodexHandoffSetup.exe`
 - `dist\CodexHandoffSetup-<version>.exe`
 
-前者は常に最新を指す固定名、後者は GitHub Releases や手動配布で差し替わりを追跡しやすい版付きファイル名です。現段階では「ダウンロードして実行」の配布を前提にしており、Inno Setup のような別インストーラーは必須ではありません。
+The fixed filename always points to the latest build. The versioned filename is easier to track in GitHub Releases and manual distribution. At this stage the project expects simple download-and-run distribution, so an external installer such as Inno Setup is not required.
 
-利用者視点では次の挙動です。
+User-facing behavior:
 
-- `setup.exe` は `%LOCALAPPDATA%\CodexHandoff` に本体を入れる
-- 更新時は新しい `setup.exe` をそのまま再実行すれば上書きできる
-- background sync は active workspace を見て handoff を裏で更新する
-- 不要になったら `%LOCALAPPDATA%\CodexHandoff` を削除し、必要なら `codex-handoff uninstall-global-agents` で AGENTS の管理ブロックも外せる
+- `setup.exe` installs the app into `%LOCALAPPDATA%\CodexHandoff`
+- Re-running a newer `setup.exe` updates the existing installation
+- background sync watches the active workspace and refreshes the handoff in the background
+- if you no longer need it, you can delete `%LOCALAPPDATA%\CodexHandoff` and optionally run `codex-handoff uninstall-global-agents` to remove the AGENTS block
 
-ビルド時には次も自動生成します。
+The build also generates:
 
 - `build-assets/codex-handoff.ico`
 - `build-assets/version_info.txt`
 
-そのため、配布用 `exe` にはアプリ用アイコンと Windows のバージョン情報が入ります。
+That means the packaged executable includes the app icon and Windows version information.
 
-この開発元リポジトリでは、`.codex-handoff/`、`dist/`、`build/`、`build-assets/` 配下の生成物は commit しない前提です。公開用の配布物は Git 管理ではなく GitHub Releases に載せます。
+This development repository does not commit generated files under `.codex-handoff/`, `dist/`, `build/`, or `build-assets/`. Public distribution happens through GitHub Releases, not through Git history.
 
 ## GitHub Releases
 
-GitHub Releases 向けの Windows ビルド workflow は [release-windows.yml](.github/workflows/release-windows.yml) です。
+The Windows release workflow is [release-windows.yml](.github/workflows/release-windows.yml).
 
-- `workflow_dispatch` で手動実行可能
-- `v*` タグ push で自動実行
-- 成果物として `CodexHandoffSetup.exe` と `CodexHandoffSetup-<version>.exe` を artifact に保存
-- タグ実行時はそのまま両方を Release asset に添付
+- `workflow_dispatch` is supported for manual runs
+- `v*` tag pushes run automatically
+- The workflow saves `CodexHandoffSetup.exe` and `CodexHandoffSetup-<version>.exe` as artifacts
+- Tag runs attach both files to the GitHub Release automatically
 
-想定フロー:
+Example flow:
 
 ```powershell
 git tag v0.6.10
 git push origin v0.6.10
 ```
 
-## ライセンス
+## License
 
-MIT License です。詳細は `LICENSE` を参照してください。
+MIT License. See `LICENSE` for details.

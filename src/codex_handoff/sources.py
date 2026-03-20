@@ -10,7 +10,6 @@ from urllib.request import Request, urlopen
 
 from codex_handoff.config import default_config
 from codex_handoff.files import parse_markdown_sections, read_optional_text, strip_first_heading, to_posix_path
-from codex_handoff.localization import detect_language
 from codex_handoff.models import (
     CommitSummary,
     FileChange,
@@ -67,8 +66,7 @@ class ReadmeSource:
         self.paths = paths
 
     def collect(self) -> ReadmeContext:
-        language = detect_language()
-        candidate_names = ("README.en.md", "README.md") if language == "en" else ("README.md", "README.en.md")
+        candidate_names = ("README.md", "README.en.md")
         readme_path = next((self.paths.root / name for name in candidate_names if (self.paths.root / name).exists()), None)
         if readme_path is None:
             return ReadmeContext()

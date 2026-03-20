@@ -31,6 +31,71 @@ TEXTS: dict[str, tuple[str, str]] = {
         "- `codex-handoff` が利用できない場合だけ、その旨を短く伝えて通常どおり進める。",
         "- Only if `codex-handoff` is unavailable, say so briefly and continue normally.",
     ),
+    "cli.help.version": ("インストール済みの codex-handoff のバージョンを表示して終了する。", "Show the installed codex-handoff version and exit."),
+    "doctor.global_home": ("global store: {path}", "Global store: {path}"),
+    "doctor.user_memory": ("user memory: {path}", "User memory: {path}"),
+    "doctor.project_store": ("current project store: {path}", "Current project store: {path}"),
+    "doctor.local_store": ("local mirror: {path}", "Local mirror: {path}"),
+    "doctor.local_imported": ("ローカル `.codex-handoff` の変更を global store に取り込みました。", "Imported local `.codex-handoff` changes into the global store."),
+    "doctor.global_agents.block_present": ("global AGENTS block: {path}", "Global AGENTS block: {path}"),
+    "doctor.global_agents.block_missing": ("{path} に codex-handoff ブロックがありません。`codex-handoff setup --install-global-agents` を実行してください。", "No codex-handoff block was found in {path}. Run `codex-handoff setup --install-global-agents`."),
+    "doctor.global_agents.file_missing": ("{path} がありません。`codex-handoff setup --install-global-agents` を実行してください。", "{path} does not exist. Run `codex-handoff setup --install-global-agents`."),
+    "doctor.config.exists": ("project config が存在します。", "The project config exists."),
+    "doctor.config.valid": ("設定値は妥当です。", "The configuration values are valid."),
+    "doctor.config.missing": ("project config がありません。", "The project config is missing."),
+    "doctor.file.exists": ("{path} が存在します。", "{path} exists."),
+    "doctor.file.missing": ("{path} がありません。", "{path} is missing."),
+    "doctor.encoding.invalid": ("{path} は UTF-8 で読めません。", "{path} could not be read as UTF-8."),
+    "doctor.encoding.bom": ("{path} に UTF-8 BOM が含まれています。", "{path} contains a UTF-8 BOM."),
+    "doctor.encoding.utf8": ("{path} は UTF-8 BOM なしです。", "{path} is UTF-8 without a BOM."),
+    "doctor.git.unavailable": ("Git が見つかりません。手動メモのみで運用します。", "Git is unavailable. The workflow will use manual notes only."),
+    "doctor.git.not_repo": ("このディレクトリは Git リポジトリではありません。パス単位の project store として扱います。", "This directory is not a Git repository. It will be treated as a path-based project store."),
+    "doctor.git.repo": ("Git リポジトリを検出しました。ブランチ: {branch}", "Detected a Git repository. Branch: {branch}"),
+    "cli.setup.install_global_agents": ("~/.codex/AGENTS.md に codex-handoff ブロックを追加または更新する", "Add or update the codex-handoff block in ~/.codex/AGENTS.md"),
+    "cli.setup.fail": ("setup に失敗しました: {exc}", "setup failed: {exc}"),
+    "cli.setup.global_store": ("global store: {path}", "Global store: {path}"),
+    "cli.setup.global_agents_snippet": ("global AGENTS snippet: {path}", "Global AGENTS snippet: {path}"),
+    "cli.setup.unchanged": ("global AGENTS は未変更です。自動読込を有効にするには `codex-handoff setup --install-global-agents` を実行してください。", "Global AGENTS was unchanged. Run `codex-handoff setup --install-global-agents` to enable automatic loading."),
+    "cli.setup.backup": ("global AGENTS のバックアップを作成しました: {path}", "Created a backup of global AGENTS: {path}"),
+    "cli.setup.updated": ("global AGENTS を更新しました: {path}", "Updated global AGENTS: {path}"),
+    "cli.setup.up_to_date": ("global AGENTS は既に最新です: {path}", "Global AGENTS is already up to date: {path}"),
+    "cli.init.fail": ("init に失敗しました: {exc}", "init failed: {exc}"),
+    "cli.init.project_store": ("project store: {path}", "Project store: {path}"),
+    "cli.init.migrated": ("ローカル `.codex-handoff` の変更を global store に取り込みました。", "Imported local `.codex-handoff` changes into the global store."),
+    "cli.init.created": ("作成:", "Created:"),
+    "cli.init.preserved": ("保持:", "Preserved:"),
+    "cli.capture.note": ("tasks.md の末尾に追加する 1 行メモ", "One-line note to append to the end of tasks.md"),
+    "cli.capture.fail": ("capture に失敗しました: {exc}", "capture failed: {exc}"),
+    "cli.capture.updated_state": ("state.json を更新しました: {path}", "Updated state.json: {path}"),
+    "cli.capture.updated_docs": ("handoff docs を更新しました: {path}", "Updated handoff docs: {path}"),
+    "cli.capture.project_store": ("project store: {path}", "Project store: {path}"),
+    "cli.capture.local_mirror": ("local mirror: {path}", "Local mirror: {path}"),
+    "cli.capture.branch": ("ブランチ: {branch} / 変更ファイル数: {count}", "Branch: {branch} / changed files: {count}"),
+    "cli.capture.git_repo": ("Git リポジトリではありませんが、Git は利用できます。", "Git is available, but this directory is not a Git repository."),
+    "cli.capture.git_unavailable": ("Git が利用できないため、手動メモだけで運用します。", "Git is unavailable, so the workflow uses manual notes only."),
+    "cli.prepare.stdout_hint": ("handoff docs を更新しました: {path}", "Updated handoff docs: {path}"),
+    "cli.prepare.fail": ("prepare に失敗しました: {exc}", "prepare failed: {exc}"),
+    "cli.prepare.updated_docs": ("handoff docs を更新しました: {path}", "Updated handoff docs: {path}"),
+    "cli.prepare.local_mirror": ("local mirror: {path}", "Local mirror: {path}"),
+    "cli.where.fail": ("where に失敗しました: {exc}", "where failed: {exc}"),
+    "cli.where.project_root": ("project root: {path}", "Project root: {path}"),
+    "cli.where.project_id": ("project id: {value}", "Project ID: {value}"),
+    "cli.where.project_store": ("project store: {path}", "Project store: {path}"),
+    "cli.where.local_mirror": ("local mirror: {path}", "Local mirror: {path}"),
+    "cli.where.project_md": ("project.md: {path}", "project.md: {path}"),
+    "cli.where.decisions_md": ("decisions.md: {path}", "decisions.md: {path}"),
+    "cli.where.tasks_md": ("tasks.md: {path}", "tasks.md: {path}"),
+    "cli.where.memory_json": ("memory.json: {path}", "memory.json: {path}"),
+    "cli.where.next_thread_md": ("next-thread.md: {path}", "next-thread.md: {path}"),
+    "cli.bootstrap": ("`setup` の互換コマンドです。", "Compatibility command for `setup`."),
+    "cli.uninstall.fail": ("uninstall-global-agents に失敗しました: {exc}", "uninstall-global-agents failed: {exc}"),
+    "cli.uninstall.backup": ("global AGENTS のバックアップを作成しました: {path}", "Created a backup of global AGENTS: {path}"),
+    "cli.uninstall.removed": ("managed block を削除しました: {path}", "Removed the managed block: {path}"),
+    "cli.uninstall.missing": ("managed block は存在しませんでした: {path}", "The managed block was not present: {path}"),
+    "cli.doctor.target": ("診断対象: {path}", "Diagnostics target: {path}"),
+    "cli.daemon.once": ("1 回だけ同期して終了する", "Sync once and exit"),
+    "cli.daemon.poll_seconds": ("常駐時の同期間隔(秒)", "Polling interval while resident (seconds)"),
+    "cli.daemon.fail": ("daemon に失敗しました: {exc}", "daemon failed: {exc}"),
     "gui.title": ("Codex Handoff", "Codex Handoff"),
     "gui.subtitle": (
         "初回セットアップだけを行う companion app です。以後は GUI を開かなくても、active workspace の handoff を自動更新します。",
@@ -196,7 +261,7 @@ TEXTS: dict[str, tuple[str, str]] = {
 }
 
 
-def normalize_language(value: str | None, *, default: Language = "ja") -> Language:
+def normalize_language(value: str | None, *, default: Language = "en") -> Language:
     if not value:
         return default
     normalized = value.strip().lower().replace("_", "-")
@@ -209,7 +274,7 @@ def normalize_language(value: str | None, *, default: Language = "ja") -> Langua
     return default
 
 
-def detect_system_language(*, default: Language = "ja") -> Language:
+def detect_system_language(*, default: Language = "en") -> Language:
     candidates: list[str | None] = [
         os.environ.get("LC_ALL"),
         os.environ.get("LC_MESSAGES"),
@@ -228,11 +293,11 @@ def detect_system_language(*, default: Language = "ja") -> Language:
     return default
 
 
-def detect_language(*, default: Language = "ja") -> Language:
+def detect_language(*, default: Language = "en") -> Language:
     override = os.environ.get("CODEX_HANDOFF_LANG")
     if override:
         return normalize_language(override, default=default)
-    return detect_system_language(default=default)
+    return default
 
 
 def set_language(language: Language) -> None:
@@ -240,7 +305,7 @@ def set_language(language: Language) -> None:
 
 
 def t(key: str, *, language: str | None = None, **kwargs: object) -> str:
-    lang = normalize_language(language, default="ja") if language is not None else detect_language()
+    lang = normalize_language(language, default="en") if language is not None else detect_language()
     template = TEXTS.get(key)
     if template is None:
         return key.format(**kwargs) if kwargs else key

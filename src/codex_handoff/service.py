@@ -12,6 +12,7 @@ from codex_handoff.codex_sessions import CodexSessionSource
 from codex_handoff.errors import CodexHandoffError
 from codex_handoff.files import has_utf8_bom, read_optional_text, write_text
 from codex_handoff.focus import select_user_facing_changed_files
+from codex_handoff.localization import t
 from codex_handoff.memory import (
     _classify_assistant_semantic_text,
     _is_durable_assistant_semantic,
@@ -138,23 +139,23 @@ def run_doctor(start: Path) -> tuple[ProjectPaths, list[DoctorFinding]]:
     findings: list[DoctorFinding] = []
     config: ProjectConfig | None = None
 
-    findings.append(DoctorFinding("ok", "global_home", f"global store: {project_paths.global_paths.app_home}"))
-    findings.append(DoctorFinding("ok", "user_memory", f"user memory: {project_paths.global_paths.user_memory_file}"))
-    findings.append(DoctorFinding("ok", "project_store", f"current project store: {project_paths.handoff_dir}"))
-    findings.append(DoctorFinding("ok", "local_store", f"local mirror: {project_paths.local_handoff_dir}"))
+    findings.append(DoctorFinding("ok", "global_home", t("doctor.global_home", path=project_paths.global_paths.app_home)))
+    findings.append(DoctorFinding("ok", "user_memory", t("doctor.user_memory", path=project_paths.global_paths.user_memory_file)))
+    findings.append(DoctorFinding("ok", "project_store", t("doctor.project_store", path=project_paths.handoff_dir)))
+    findings.append(DoctorFinding("ok", "local_store", t("doctor.local_store", path=project_paths.local_handoff_dir)))
     if migrated:
-        findings.append(DoctorFinding("ok", "local_imported", "ローカル `.codex-handoff` の変更を global store に取り込みました。"))
+        findings.append(DoctorFinding("ok", "local_imported", t("doctor.local_imported")))
 
     if project_paths.global_paths.global_agents_file.exists():
         if has_agents_block(project_paths.global_paths.global_agents_file):
-            findings.append(DoctorFinding("ok", "global_agents", f"global AGENTS block: {project_paths.global_paths.global_agents_file}"))
+            findings.append(DoctorFinding("ok", "global_agents", t("doctor.global_agents.block_present", path=project_paths.global_paths.global_agents_file)))
         else:
-            findings.append(DoctorFinding("warning", "global_agents_missing", f"{project_paths.global_paths.global_agents_file} に codex-handoff ブロックがありません。`codex-handoff setup --install-global-agents` を実行してください。"))
+            findings.append(DoctorFinding("warning", "global_agents_missing", t("doctor.global_agents.block_missing", path=project_paths.global_paths.global_agents_file)))
     else:
-        findings.append(DoctorFinding("warning", "global_agents_missing", f"{project_paths.global_paths.global_agents_file} がありません。`codex-handoff setup --install-global-agents` を実行してください。"))
+        findings.append(DoctorFinding("warning", "global_agents_missing", t("doctor.global_agents.file_missing", path=project_paths.global_paths.global_agents_file)))
 
     if project_paths.config_file.exists():
-        findings.append(DoctorFinding("ok", "config_exists", "project config が存在します。"))
+        findings.append(DoctorFinding("ok", "config_exists", t("doctor.config.exists")))
         try:
             config = load_config(project_paths.config_file)
         except CodexHandoffError as exc:
@@ -163,9 +164,9 @@ def run_doctor(start: Path) -> tuple[ProjectPaths, list[DoctorFinding]]:
             for issue in validate_config(config):
                 findings.append(DoctorFinding("error", "config_invalid", issue))
             if not validate_config(config):
-                findings.append(DoctorFinding("ok", "config_valid", "設定値は妥当です。"))
+                findings.append(DoctorFinding("ok", "config_valid", t("doctor.config.valid")))
     else:
-        findings.append(DoctorFinding("error", "config_missing", "project config がありません。"))
+        findings.append(DoctorFinding("error", "config_missing", t("doctor.config.missing")))
 
     for name, path in (
         ("project", project_paths.project_file),
@@ -176,9 +177,9 @@ def run_doctor(start: Path) -> tuple[ProjectPaths, list[DoctorFinding]]:
         ("next_thread", project_paths.next_thread_file),
     ):
         if path.exists():
-            findings.append(DoctorFinding("ok", f"{name}_exists", f"{path.name} が存在します。"))
+            findings.append(DoctorFinding("ok", f"{name}_exists", t("doctor.file.exists", path=path.name)))
         else:
-            findings.append(DoctorFinding("warning", f"{name}_missing", f"{path.name} がありません。"))
+            findings.append(DoctorFinding("warning", f"{name}_missing", t("doctor.file.missing", path=path.name)))
 
     for path in (
         project_paths.config_file,
@@ -194,20 +195,20 @@ def run_doctor(start: Path) -> tuple[ProjectPaths, list[DoctorFinding]]:
         try:
             read_optional_text(path)
         except UnicodeDecodeError:
-            findings.append(DoctorFinding("error", "encoding_invalid", f"{path.name} は UTF-8 で読めません。"))
+            findings.append(DoctorFinding("error", "encoding_invalid", t("doctor.encoding.invalid", path=path.name)))
             continue
         if has_utf8_bom(path):
-            findings.append(DoctorFinding("error", "encoding_bom", f"{path.name} に UTF-8 BOM が含まれています。"))
+            findings.append(DoctorFinding("error", "encoding_bom", t("doctor.encoding.bom", path=path.name)))
         else:
-            findings.append(DoctorFinding("ok", "encoding_utf8", f"{path.name} は UTF-8 BOM なしです。"))
+            findings.append(DoctorFinding("ok", "encoding_utf8", t("doctor.encoding.utf8", path=path.name)))
 
     snapshot = GitSource(project_paths, config).collect() if config else RepoSnapshot(git_available=False, is_repo=False)
     if not snapshot.git_available:
-        findings.append(DoctorFinding("warning", "git_unavailable", "Git が見つかりません。手動メモのみで運用します。"))
+        findings.append(DoctorFinding("warning", "git_unavailable", t("doctor.git.unavailable")))
     elif not snapshot.is_repo:
-        findings.append(DoctorFinding("warning", "git_not_repo", "このディレクトリは Git リポジトリではありません。パス単位の project store として扱います。"))
+        findings.append(DoctorFinding("warning", "git_not_repo", t("doctor.git.not_repo")))
     else:
-        findings.append(DoctorFinding("ok", "git_repo", f"Git リポジトリを検出しました。ブランチ: {snapshot.branch or '(detached)'}"))
+        findings.append(DoctorFinding("ok", "git_repo", t("doctor.git.repo", branch=snapshot.branch or "(detached)")))
 
     return project_paths, findings
 
