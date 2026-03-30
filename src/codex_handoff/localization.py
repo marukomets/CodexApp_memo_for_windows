@@ -261,6 +261,52 @@ TEXTS: dict[str, tuple[str, str]] = {
 }
 
 
+TEXTS.update(
+    {
+        "bootstrap.prepare_first": (
+            "- ローカル作業を始める前に、カレントディレクトリで `codex-handoff prepare --stdout` を試す。PATH に無い場合は `& \"$env:LOCALAPPDATA\\CodexHandoff\\codex-handoff.exe\" prepare --stdout` を試し、その出力を前提として扱う。",
+            "- Before starting local work, try `codex-handoff prepare --stdout` in the current directory. If it is not on PATH, try `& \"$env:LOCALAPPDATA\\CodexHandoff\\codex-handoff.exe\" prepare --stdout` and treat that output as the starting point.",
+        ),
+        "doctor.cli.installed": (
+            "インストール済み CLI: {path}",
+            "Installed CLI: {path}",
+        ),
+        "doctor.cli.missing": (
+            "インストール済み CLI が見つかりません: {path}",
+            "The installed CLI was not found: {path}",
+        ),
+        "doctor.path.present": (
+            "インストール先は user PATH に入っています: {path}",
+            "The install directory is on the user PATH: {path}",
+        ),
+        "doctor.path.missing": (
+            "インストール先が user PATH にありません: {path}. 既に Codex を開いている場合は再起動するか、{exe} を直接使ってください。",
+            "The install directory is not on the user PATH: {path}. If Codex is already running, restart it once or call {exe} directly.",
+        ),
+        "gui.install.cli_location": (
+            "CLI location",
+            "CLI location",
+        ),
+        "gui.install.path.present": (
+            "Install directory is already on the user PATH.",
+            "Install directory is already on the user PATH.",
+        ),
+        "gui.install.path.missing": (
+            "Install updates the user PATH. Restart Codex or the terminal if it was already open.",
+            "Install updates the user PATH. Restart Codex or the terminal if it was already open.",
+        ),
+        "gui.finish.restart_hint": (
+            "If Codex or the terminal was already running, restart it once so the new PATH is visible.",
+            "If Codex or the terminal was already running, restart it once so the new PATH is visible.",
+        ),
+        "gui.message.install.success": (
+            "Installed to:\n{path}\nCLI:\n{cli_path}\n\nIf Codex or the terminal was already running, restart it once before testing `codex-handoff`.",
+            "Installed to:\n{path}\nCLI:\n{cli_path}\n\nIf Codex or the terminal was already running, restart it once before testing `codex-handoff`.",
+        ),
+    }
+)
+
+
 def normalize_language(value: str | None, *, default: Language = "en") -> Language:
     if not value:
         return default

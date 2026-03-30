@@ -45,7 +45,9 @@ v0.6 added `memory.json` as the structured memory source of truth, separating us
 
 - Download `CodexHandoffSetup.exe` or `CodexHandoffSetup-<version>.exe` from GitHub Releases
 - Run `setup.exe` to self-install into `%LOCALAPPDATA%\CodexHandoff`
+- The installer also places `codex-handoff.exe` in `%LOCALAPPDATA%\CodexHandoff` and adds that directory to the user `PATH`
 - Use Step 2 and `Apply setup` to enable global setup and background sync
+- If Codex or the terminal was already open during installation, restart it once before testing the command
 
 ## Install
 
@@ -93,6 +95,7 @@ codex-handoff prepare --stdout
 - `where` shows both `~/.codex-handoff/projects/<project-id>/` and `.codex-handoff/`
 - `doctor` reports no problems with global setup or the project store
 - `prepare --stdout` prints the body that belongs in `.codex-handoff/next-thread.md`
+- If `codex-handoff` is still not found, restart Codex once or run `%LOCALAPPDATA%\CodexHandoff\codex-handoff.exe prepare --stdout` directly
 
 ## Usage
 
@@ -265,6 +268,8 @@ The fixed filename always points to the latest build. The versioned filename is 
 User-facing behavior:
 
 - `setup.exe` installs the app into `%LOCALAPPDATA%\CodexHandoff`
+- The installed directory also contains `codex-handoff.exe` for command-line use
+- The installer adds `%LOCALAPPDATA%\CodexHandoff` to the user `PATH`
 - Re-running a newer `setup.exe` updates the existing installation
 - background sync watches the active workspace and refreshes the handoff in the background
 - if you no longer need it, you can delete `%LOCALAPPDATA%\CodexHandoff` and optionally run `codex-handoff uninstall-global-agents` to remove the AGENTS block

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import zipfile
 from pathlib import Path
 
@@ -15,6 +16,11 @@ def test_install_current_app_copies_executable_without_shortcuts(
 
     monkeypatch.setattr(installer, "current_app_path", lambda: source_exe)
     monkeypatch.setattr(installer, "recommended_install_dir", lambda: tmp_path / "LocalAppData" / "CodexHandoff")
+    cli_bundle = tmp_path / "bundle" / "codex-handoff.exe"
+    cli_bundle.parent.mkdir(parents=True, exist_ok=True)
+    cli_bundle.write_bytes(b"fake-cli-exe")
+    monkeypatch.setattr(installer, "bundled_cli_exe_path", lambda: cli_bundle)
+    monkeypatch.setattr(installer, "ensure_install_dir_on_user_path", lambda target_dir=None: True)
 
     result = installer.install_current_app(
         create_desktop_shortcut=False,
@@ -23,6 +29,9 @@ def test_install_current_app_copies_executable_without_shortcuts(
 
     assert result.installed_exe == tmp_path / "LocalAppData" / "CodexHandoff" / "CodexHandoff.exe"
     assert result.installed_exe.read_bytes() == b"fake-exe"
+    assert result.installed_cli_exe == tmp_path / "LocalAppData" / "CodexHandoff" / "codex-handoff.exe"
+    assert result.installed_cli_exe.read_bytes() == b"fake-cli-exe"
+    assert result.path_updated is True
     assert result.desktop_shortcut is None
     assert result.start_menu_shortcut is None
 
@@ -103,3 +112,22 @@ def test_background_startup_shortcut_detection(tmp_path: Path, monkeypatch) -> N
     assert installer.is_background_startup_installed() is True
     assert installer.remove_background_startup_shortcut() is True
     assert not shortcut.exists()
+
+
+def test_ensure_install_dir_on_user_path_prepends_once(tmp_path: Path, monkeypatch) -> None:
+    target_dir = tmp_path / "LocalAppData" / "CodexHandoff"
+    stored: dict[str, str] = {"value": r"C:\Windows\System32"}
+    broadcasts: list[bool] = []
+
+    monkeypatch.setattr(installer, "_get_user_path_value", lambda: stored["value"])
+    monkeypatch.setattr(installer, "_set_user_path_value", lambda value: stored.__setitem__("value", value))
+    monkeypatch.setattr(installer, "_broadcast_environment_change", lambda: broadcasts.append(True))
+    monkeypatch.setenv("PATH", r"C:\Windows\System32")
+
+    assert installer.ensure_install_dir_on_user_path(target_dir) is True
+    assert stored["value"].split(";")[0] == str(target_dir.resolve())
+    assert os.environ["PATH"].split(";")[0] == str(target_dir.resolve())
+    assert broadcasts == [True]
+
+    assert installer.ensure_install_dir_on_user_path(target_dir) is False
+    assert stored["value"].split(";").count(str(target_dir.resolve())) == 1

@@ -13,9 +13,11 @@ from codex_handoff.installer import (
     can_self_install,
     install_background_startup_shortcut,
     install_current_app,
+    installed_cli_path,
     installed_background_exe_path,
     is_app_installed,
     is_background_startup_installed,
+    is_install_dir_on_user_path,
     recommended_install_dir,
     remove_background_startup_shortcut,
     stop_managed_processes,
@@ -265,7 +267,11 @@ class CodexHandoffDesktop(tk.Tk):
         self.show_screen("configure")
         messagebox.showinfo(
             self._text("gui.message.install.title"),
-            self._text("gui.message.install.success", path=result.installed_exe),
+            self._text(
+                "gui.message.install.success",
+                path=result.installed_exe,
+                cli_path=result.installed_cli_exe or installed_cli_path(),
+            ),
         )
 
     def run_guided_setup(self) -> None:
@@ -387,11 +393,18 @@ def build_setup_view_state(
 
 def render_install_status(*, installed: bool, language: str | None = None) -> str:
     recommended = recommended_install_dir() / "CodexHandoff.exe"
+    cli_path = installed_cli_path()
     lang = language or detect_language()
+    path_text = t(
+        "gui.install.path.present" if is_install_dir_on_user_path() else "gui.install.path.missing",
+        language=lang,
+    )
     return "\n".join(
         [
             t("gui.install.status.installed" if installed else "gui.install.status.not_installed", language=lang),
             f"{t('gui.install.location', language=lang)}: {recommended}",
+            f"{t('gui.install.cli_location', language=lang)}: {cli_path}",
+            path_text,
             t("gui.install.safe", language=lang),
         ]
     )
@@ -431,5 +444,6 @@ def render_finish_summary(
             f"{t('gui.finish.workspace', language=lang)}: {workspace_text}",
             t("gui.automation.auto_loading.enabled" if agents_enabled else "gui.automation.auto_loading.not_installed", language=lang),
             t("gui.automation.background_sync.enabled" if background_enabled else "gui.automation.background_sync.not_installed", language=lang),
+            t("gui.finish.restart_hint", language=lang),
         ]
     )

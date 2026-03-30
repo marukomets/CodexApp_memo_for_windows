@@ -66,6 +66,7 @@ def test_setup_can_install_global_agents_with_backup(
     content = global_agents.read_text(encoding="utf-8")
     assert "<!-- codex-handoff:start -->" in content
     assert "codex-handoff prepare --stdout" in content
+    assert "CodexHandoff\\codex-handoff.exe" in content
     assert "user-memory.json" in content
     assert ".codex-handoff/memory.json" in content
 
@@ -2532,11 +2533,17 @@ def test_doctor_reports_missing_global_agents_when_not_installed(
     repo = tmp_path / "doctor-repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
+    monkeypatch.setattr(service_module, "is_cli_installed", lambda: False)
+    monkeypatch.setattr(service_module, "is_install_dir_on_user_path", lambda: False)
+    monkeypatch.setattr(service_module, "installed_cli_path", lambda: tmp_path / "LocalAppData" / "CodexHandoff" / "codex-handoff.exe")
+    monkeypatch.setattr(service_module, "recommended_install_dir", lambda: tmp_path / "LocalAppData" / "CodexHandoff")
 
     assert runner.invoke(app, ["setup"]).exit_code == 0
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 0
     assert "[WARN] global_agents_missing:" in result.stdout
+    assert "[WARN] installed_cli_missing:" in result.stdout
+    assert "[WARN] install_dir_not_on_path:" in result.stdout
     assert "[OK] user_memory:" in result.stdout
     assert "[OK] project_store:" in result.stdout
 

@@ -12,6 +12,12 @@ from codex_handoff.codex_sessions import CodexSessionSource
 from codex_handoff.errors import CodexHandoffError
 from codex_handoff.files import has_utf8_bom, read_optional_text, write_text
 from codex_handoff.focus import select_user_facing_changed_files
+from codex_handoff.installer import (
+    installed_cli_path,
+    is_cli_installed,
+    is_install_dir_on_user_path,
+    recommended_install_dir,
+)
 from codex_handoff.localization import t
 from codex_handoff.memory import (
     _classify_assistant_semantic_text,
@@ -143,6 +149,20 @@ def run_doctor(start: Path) -> tuple[ProjectPaths, list[DoctorFinding]]:
     findings.append(DoctorFinding("ok", "user_memory", t("doctor.user_memory", path=project_paths.global_paths.user_memory_file)))
     findings.append(DoctorFinding("ok", "project_store", t("doctor.project_store", path=project_paths.handoff_dir)))
     findings.append(DoctorFinding("ok", "local_store", t("doctor.local_store", path=project_paths.local_handoff_dir)))
+    if is_cli_installed():
+        findings.append(DoctorFinding("ok", "installed_cli", t("doctor.cli.installed", path=installed_cli_path())))
+    else:
+        findings.append(DoctorFinding("warning", "installed_cli_missing", t("doctor.cli.missing", path=installed_cli_path())))
+    if is_install_dir_on_user_path():
+        findings.append(DoctorFinding("ok", "install_dir_on_path", t("doctor.path.present", path=recommended_install_dir())))
+    else:
+        findings.append(
+            DoctorFinding(
+                "warning",
+                "install_dir_not_on_path",
+                t("doctor.path.missing", path=recommended_install_dir(), exe=installed_cli_path()),
+            )
+        )
     if migrated:
         findings.append(DoctorFinding("ok", "local_imported", t("doctor.local_imported")))
 
