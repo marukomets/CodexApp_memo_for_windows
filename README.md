@@ -295,8 +295,8 @@ The Windows release workflow is [release-windows.yml](.github/workflows/release-
 Example flow:
 
 ```powershell
-git tag v0.6.10
-git push origin v0.6.10
+git tag v0.6.11
+git push origin v0.6.11
 ```
 
 ## License
